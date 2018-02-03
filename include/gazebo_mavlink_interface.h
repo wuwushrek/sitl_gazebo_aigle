@@ -55,6 +55,8 @@
 
 #include <geo_mag_declination.h>
 
+#include <future>
+
 static const uint32_t kDefaultMavlinkUdpPort = 14560;
 
 namespace gazebo {
@@ -237,8 +239,9 @@ private:
   struct sockaddr_in _myaddr;     ///< The locally bound address
   struct sockaddr_in _srcaddr;    ///< SITL instance
   socklen_t _addrlen;
+  
   unsigned char _buf[65535];
-  struct pollfd fds[1];
+  struct pollfd fds[2];
 
   struct sockaddr_in _srcaddr_2;  ///< MAVROS
 
@@ -249,5 +252,20 @@ private:
 
   in_addr_t mavlink_addr_;
   int mavlink_udp_port_;
+
+  //---------------------------------------------------------------------------
+  //Aigle receive port , Aigle socket definition + Aigle useful variable
+  #define SOCKET_NAME "/tmp/share_fd_gazebo_aigle.socket"
+  static constexpr uint32_t kDefaultMavlinkAigleUdpPort = 14570;
+  std::future<void> parrallel_sendfd; 
+
+  int _fd_aigle;
+  struct sockaddr_in _myaddr_aigle;
+  struct sockaddr_in _srcaddr_aigle;
+  socklen_t _addrlen_aigle;
+
+  int mavlink_aigle_udp_port_;
+  //---------------------------------------------------------------------------
+
 };
 }
