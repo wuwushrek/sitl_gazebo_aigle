@@ -20,9 +20,14 @@
  */
 
 #include <gazebo_mavlink_interface.h>
+#include <errno.h>
 
 namespace gazebo {
 GZ_REGISTER_MODEL_PLUGIN(GazeboMavlinkInterface);
+
+int poll_message(int index, struct pollfd *fds, unsigned char* _buf, size_t size_buff,  struct sockaddr_in* addr_recv, socklen_t* addrlen_recv);
+// void init_aigle_connection(int fd, struct sockaddr_in* addr_recv, socklen_t* addrlen_recv);
+void send_fd(int sendfd);
 
 GazeboMavlinkInterface::~GazeboMavlinkInterface() {
   event::Events::DisconnectWorldUpdateBegin(updateConnection_);
@@ -46,6 +51,7 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
   } else {
     gzerr << "[gazebo_mavlink_interface] Please specify a robotNamespace.\n";
   }
+
 
   node_handle_ = transport::NodePtr(new transport::Node());
   node_handle_->Init(namespace_);
@@ -438,10 +444,12 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
       }
     }
   }
+
   if (_sdf->HasElement("mavlink_udp_port")) {
     mavlink_udp_port_ = _sdf->GetElement("mavlink_udp_port")->Get<int>();
   }
 
+  //---------------------------------------------------------------------------
   // try to setup udp socket for communcation with simulator
   if ((_fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
     printf("create socket failed\n");
@@ -454,11 +462,14 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
   // Let the OS pick the port
   _myaddr.sin_port = htons(0);
 
+  //Bind socket with the file descriptor and address
   if (bind(_fd, (struct sockaddr *)&_myaddr, sizeof(_myaddr)) < 0) {
     printf("bind failed\n");
+    gzerr << "bind failed\n";
     return;
   }
 
+  //Initialize PX4 SITL address and port
   _srcaddr.sin_family = AF_INET;
   _srcaddr.sin_addr.s_addr = mavlink_addr_;
   _srcaddr.sin_port = htons(mavlink_udp_port_);
@@ -469,6 +480,47 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 
   mavlink_status_t* chan_state = mavlink_get_channel_status(MAVLINK_COMM_0);
   chan_state->flags |= MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+
+  /***************************************************************************/
+  // Get AIGLE port if any port was specified
+  mavlink_aigle_udp_port_ = kDefaultMavlinkAigleUdpPort;
+  if (_sdf->HasElement("mavlink_aigle_udp_port")) {
+    mavlink_aigle_udp_port_ = _sdf->GetElement("mavlink_aigle_udp_port")->Get<int>();
+  }
+
+  // Try to setup udp socket for communication with AIGLE
+  if ((_fd_aigle = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+    printf("create socket Aigle failed\n");
+    return;
+  }
+
+  memset((char *)&_myaddr_aigle, 0, sizeof(_myaddr_aigle));
+  _myaddr_aigle.sin_family = AF_INET;
+  _myaddr_aigle.sin_addr.s_addr = htonl(INADDR_ANY);
+  _myaddr_aigle.sin_port = htons(mavlink_aigle_udp_port_);
+
+  if (bind(_fd_aigle, (struct sockaddr *)&_myaddr_aigle, sizeof(_myaddr_aigle)) < 0){
+    printf("bind Aigle failed\n");
+    gzerr << "bind Aigle failed\n";
+    return;
+  }
+
+  //Initialize AIGLE address and port
+  _srcaddr_aigle.sin_family = AF_INET;
+  _srcaddr_aigle.sin_addr.s_addr = htonl(INADDR_ANY);
+  _srcaddr_aigle.sin_port = htons(mavlink_aigle_udp_port_);
+  _addrlen_aigle = sizeof(_srcaddr_aigle);
+
+  // Send fd file descriptor to aigle for motors message reception
+  parrallel_sendfd = std::async(std::launch::async, send_fd, _fd);
+  /* if (send_fd(_fd) < 0 ){
+    return ;
+  }*/
+
+  // Init the polling structure 
+  fds[1].fd = _fd_aigle;
+  fds[1].events = POLLIN;
+  /***************************************************************************/
 }
 
 // This gets called by the world update start event.
@@ -862,21 +914,20 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages(double _dt, uint32_t _timeou
   tv.tv_sec = _timeoutMs / 1000;
   tv.tv_usec = (_timeoutMs % 1000) * 1000UL;
 
-  // poll
-  ::poll(&fds[0], (sizeof(fds[0]) / sizeof(fds[0])), 0);
-
-  if (fds[0].revents & POLLIN) {
-    int len = recvfrom(_fd, _buf, sizeof(_buf), 0, (struct sockaddr *)&_srcaddr, &_addrlen);
-    if (len > 0) {
-      mavlink_message_t msg;
-      mavlink_status_t status;
-      for (unsigned i = 0; i < len; ++i)
+  int len = poll_message(1, fds,_buf, sizeof(_buf), &_srcaddr_aigle, &_addrlen_aigle);
+  // else{
+    // len = poll_message(0, fds,_buf, sizeof(_buf), &_srcaddr, &_addrlen);
+  // }
+  // Handle received datas if any
+  if (len > 0) {
+    mavlink_message_t msg;
+    mavlink_status_t status;
+    for (unsigned i = 0; i < len; ++i)
+    {
+      if (mavlink_parse_char(MAVLINK_COMM_0, _buf[i], &msg, &status))
       {
-        if (mavlink_parse_char(MAVLINK_COMM_0, _buf[i], &msg, &status))
-        {
-          // have a message, handle it
-          handle_message(&msg);
-        }
+        // have a message, handle it
+        handle_message(&msg);
       }
     }
   }
@@ -969,4 +1020,95 @@ void GazeboMavlinkInterface::handle_control(double _dt)
     }
   }
 }
+
+int poll_message(int index, struct pollfd *fds, unsigned char* _buf, size_t size_buff,  struct sockaddr_in* addr_recv, socklen_t* addrlen_recv){
+  //poll
+  ::poll(&fds[index], (sizeof(fds[index]) / sizeof(fds[index])), 0);
+
+  if (fds[index].revents & POLLIN) {
+    int len = recvfrom(fds[index].fd, _buf, size_buff, 0, (struct sockaddr *) addr_recv, addrlen_recv);
+    return len;
+  }
+  return -1;
+
+}
+
+/*
+void init_aigle_connection(int fd, struct sockaddr_in* addr_recv, socklen_t* addrlen_recv){
+  char _buf[256];
+  //Receive message sent to get socket information from the server
+  while (recvfrom(fd, _buf, sizeof(_buf), 0, (struct sockaddr *) addr_recv, addrlen_recv) < 0){
+    gzerr << "GAZEBO : No message received " << std::endl;
+  }
+
+  sprintf(_buf, "Testing UDP connection sent ECHO ! ");
+  while(sendto(fd, _buf, sizeof(_buf), 0, (struct sockaddr *) addr_recv, *addrlen_recv) < 0){
+    gzerr << "GAZEBO : Failed to send response" << std::endl;
+  }
+}
+*/
+
+void send_fd(int sendfd){
+
+  int fd_unix , fd_unix_aigle;
+  struct sockaddr_un name , address_aigle;
+  socklen_t address_aigle_len;
+
+  if((fd_unix =  socket(AF_UNIX, SOCK_STREAM, 0)) < 0){
+    gzerr << "Create Local UNIX socket failed !!!" << std::endl;
+    return;
+  }
+
+  memset(&name, 0 , sizeof(struct sockaddr_un) );
+  name.sun_family = AF_UNIX;
+  strcpy(name.sun_path, SOCKET_NAME);
+  unlink(name.sun_path);
+
+  if (bind(fd_unix, (struct sockaddr *)&name , ( strlen(name.sun_path) + sizeof(name.sun_family))) < 0){
+    gzerr << "Failed to bind Local UNIX socket !" << std::endl;
+    return ;
+  }
+
+  if (listen(fd_unix , 5) < 0){
+    gzerr << "Failed to listen !" << std::endl;
+    return ;
+  }
+
+  if ( (fd_unix_aigle = accept(fd_unix , (struct sockaddr * ) &address_aigle, &address_aigle_len)) < 0){
+    gzerr << "Failed to accept a conenction !" << std::endl;
+    return ;
+  }
+
+  struct msghdr msg = { 0 };
+  char buf[CMSG_SPACE(sizeof (sendfd))];
+  char useless[4] = {0,0,0,0};
+  memset(buf, '\0', sizeof(buf));
+
+  struct iovec io[1];
+  io[0].iov_base = (void *) useless;
+  io[0].iov_len = sizeof(useless);
+
+  msg.msg_iov = io;
+  msg.msg_iovlen = 1;
+  msg.msg_control = buf;
+  msg.msg_controllen = sizeof(buf);
+
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(sendfd));
+
+  memmove(CMSG_DATA(cmsg), &sendfd, sizeof(sendfd));
+
+  msg.msg_controllen = cmsg->cmsg_len;
+
+  while (sendmsg(fd_unix_aigle, &msg, 0) < 0){
+    gzerr << strerror(errno) << std::endl;
+  }
+  gzmsg << "PX4 SOCKET SENT TO AIGLE :  FD = " << sendfd << std::endl;
+
+  close(fd_unix_aigle);
+  close(fd_unix);
+}
+
 }
