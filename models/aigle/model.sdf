@@ -1,0 +1,32 @@
+<?xml version='1.0'?>
+<sdf version='1.5'>
+  <model name="aigle">
+    <static>true</static>
+
+    <!-- Include Aigle link -->
+    <link name ='base_carte'>
+      <pose>0 0 0.04 0 0 -1.59</pose>
+        <inertial>
+          <mass>0.001</mass>
+          <inertia>
+            <ixx>1e-7</ixx>
+            <iyy>1e-7</iyy>
+            <izz>1e-7</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+        </inertial>
+
+      <!-- Implement the visual texture -->
+      <visual name='visual'>
+        <geometry>
+          <mesh>
+            <uri>model://aigle/meshes/Aigle.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+
+  </model>
+</sdf>

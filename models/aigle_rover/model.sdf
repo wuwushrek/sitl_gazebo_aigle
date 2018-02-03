@@ -1,11 +1,11 @@
 <?xml version='1.0'?>
 <sdf version='1.5'>
-  <model name="aigle_iris">
+  <model name="aigle_rover">
     <static>false</static>
 
     <!-- Include Aigle link -->
     <link name ='base_carte'>
-      <pose>0 0 0.04 0 0 -1.59</pose>
+      <pose>0.94 0 1.05 -0.18 0 -1.59</pose>
         <inertial>
           <mass>0.001</mass>
           <inertia>
@@ -31,21 +31,21 @@
       <visual name='visual'>
         <geometry>
           <mesh>
-            <uri>model://Aigle/meshes/Aigle.dae</uri>
+            <uri>model://aigle_rover/meshes/Aigle.dae</uri>
           </mesh>
         </geometry>
       </visual>
     </link>
 
-    <!-- A drone or rover depending on the simulation -->
+    <!-- include the rover model -->
     <include>
-      <uri>model://iris</uri>
+      <uri>model://rover</uri>
       <pose>0 0 0 0 0 0</pose>
     </include>
 
     <!-- Create a fixed joint between Aigle and the robot added -->
     <joint name='aigle_robot' type='fixed'>
-      <parent>iris::base_link</parent>
+      <parent>rover::base_link</parent>
       <child>base_carte</child>
     </joint>
 
