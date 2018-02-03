@@ -55,6 +55,8 @@
     </plugin>
 
     <plugin name='mavlink_aigle_interface' filename='libgazebo_aigle_plugin.so'>
+      <robotNamespace/>
+      <gpsSubTopic>/gps_aigle</gpsSubTopic>
       <mavlink_aigle_udp_port>14570</mavlink_aigle_udp_port>
     </plugin>
 
