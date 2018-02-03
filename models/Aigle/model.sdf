@@ -1,0 +1,62 @@
+<?xml version='1.0'?>
+<sdf version='1.5'>
+  <model name="Aigle">
+    <static>false</static>
+
+    <!-- Include Aigle link -->
+    <link name ='base_carte'>
+      <pose>0 0 0.04 0 0 -1.59</pose>
+        <inertial>
+          <mass>0.001</mass>
+          <inertia>
+            <ixx>1e-7</ixx>
+            <iyy>1e-7</iyy>
+            <izz>1e-7</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+        </inertial>
+
+      <!-- No need for a collision detector -->
+      <!-- <collision name='collision'>
+        <geometry>
+          <box>
+            <size>.09 .12 .035</size>
+          </box>
+        </geometry>
+      </collision> -->
+
+      <!-- Implement the visual texture -->
+      <visual name='visual'>
+        <geometry>
+          <mesh>
+            <uri>model://Aigle/meshes/Aigle.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+
+    <!-- A drone or rover depending on the simulation -->
+    <include>
+      <uri>model://iris</uri>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+
+    <!-- Create a fixed joint between Aigle and the robot added -->
+    <joint name='aigle_robot' type='fixed'>
+      <parent>iris::base_link</parent>
+      <child>base_carte</child>
+    </joint>
+
+    <plugin name='gps_aigle_plugin' filename='libgazebo_gps_plugin.so'>
+      <robotNamespace/>
+      <gpsNoise>true</gpsNoise>
+    </plugin>
+
+    <plugin name='mavlink_aigle_interface' filename='libgazebo_aigle_plugin.so'>
+      <mavlink_aigle_udp_port>14570</mavlink_aigle_udp_port>
+    </plugin>
+
+  </model>
+</sdf>
