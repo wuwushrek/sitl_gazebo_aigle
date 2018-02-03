@@ -84,7 +84,7 @@ void IoAigleInterface::readMotors(){
 * Update data from GPS sensors 
 */
 void IoAigleInterface::updateGPS(const gps_data* m_position){
-
+	gps_pos_vel_ = *m_position;
 }
 
 /*
