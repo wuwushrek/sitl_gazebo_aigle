@@ -16,6 +16,7 @@
 
 #include <sdf/sdf.hh>
 #include <common.h>
+#include <SITLGps.pb.h>
 
 #include <mavlink/v2.0/common/mavlink.h>
 
@@ -25,9 +26,13 @@ static const uint32_t kDefaultMavlinkAigleUdpPort = 14570;
 
 namespace gazebo {
 
+
+typedef const boost::shared_ptr<const gps_msgs::msgs::SITLGps> GpsPtr;
+
 class GazeboMavlinkAigleInterface : public ModelPlugin {
 public:
-	GazeboMavlinkAigleInterface() : ModelPlugin()
+	GazeboMavlinkAigleInterface() : ModelPlugin(),
+	namespace_("")
 	{}
 
 	~GazeboMavlinkAigleInterface();
@@ -41,10 +46,18 @@ private:
 	physics::ModelPtr model_;
 	physics::WorldPtr world_;
 
+	//Node handle for topic subscribe and publish
+	transport::NodePtr node_handle_;
+	std::string namespace_;
+
 	//Pointer to the update event connection
 	event::ConnectionPtr updateConnection_;
 
-	//
+	// GPS subscriber and gps subscriber topic
+  	std::string gps_sub_topic_;
+  	transport::SubscriberPtr gps_sub_;
+
+	void GpsCallback(GpsPtr& gps_msg);
 };
 
 }
