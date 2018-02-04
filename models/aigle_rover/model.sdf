@@ -5,7 +5,7 @@
 
     <!-- Include Aigle link -->
     <link name ='base_carte'>
-      <pose>0.94 0 1.05 -0.18 0 -1.59</pose>
+      <pose>1.0 0 1.13 0 0 0</pose>
         <inertial>
           <mass>0.001</mass>
           <inertia>
@@ -45,8 +45,8 @@
 
     <!-- Create a fixed joint between Aigle and the robot added -->
     <joint name='aigle_robot' type='fixed'>
-      <parent>rover::base_link</parent>
-      <child>base_carte</child>
+      <child>rover::base_link</child>
+      <parent>base_carte</parent>
     </joint>
 
     <plugin name='gps_aigle_plugin' filename='libgazebo_gps_plugin.so'>
