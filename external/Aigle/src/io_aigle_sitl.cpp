@@ -73,7 +73,7 @@ void IoAigleInterface::readMotors(){
 						received_motors_values_.motor_values[j] = ((uint32_t) ((controls.controls[j] + 1.0)*(pwm_max_value - pwm_min_value)/2.0)) + pwm_min_value;
 						// std::cout << received_motors_values_.motor_values[j] << " , ";
 					}
-					std::cout << std::endl;
+					// std::cout << std::endl;
 				}
 			}
 		}

@@ -10,7 +10,6 @@ GazeboMavlinkAigleInterface::~GazeboMavlinkAigleInterface() {
 }
 
 void GazeboMavlinkAigleInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf) {
-
 	//Store the pointer to the model and the world instance
 	model_ =  _model;
 	world_ = model_->GetWorld();
@@ -47,11 +46,11 @@ void GazeboMavlinkAigleInterface::Load(physics::ModelPtr _model, sdf::ElementPtr
 }
 
 void GazeboMavlinkAigleInterface::OnUpdate(const common::UpdateInfo&  /*_info*/) {
-	
+
 	// Execute AIGLE strategy by reading motors value if availabled
 	// And writing motors output depending of the current state of the robot
 	// Cf aigle.h & aigle.cpp documentation for more details
-	execute_strategy(); 
+	execute_strategy();
 }
 
 void GazeboMavlinkAigleInterface::GpsCallback(GpsPtr& gps_msg){

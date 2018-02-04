@@ -21,6 +21,8 @@
 
 #include <gazebo_mavlink_interface.h>
 #include <errno.h>
+#include <chrono>
+#include <thread>
 
 namespace gazebo {
 GZ_REGISTER_MODEL_PLUGIN(GazeboMavlinkInterface);
@@ -392,11 +394,6 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
     }
   }
 
-  // Listen to the update event. This event is broadcast every
-  // simulation iteration.
-  updateConnection_ = event::Events::ConnectWorldUpdateBegin(
-      boost::bind(&GazeboMavlinkInterface::OnUpdate, this, _1));
-
   // Subscriber to IMU sensor_msgs::Imu Message and SITL message
   imu_sub_ = node_handle_->Subscribe("~/" + model_->GetName() + imu_sub_topic_, &GazeboMavlinkInterface::ImuCallback, this);
   lidar_sub_ = node_handle_->Subscribe("~/" + model_->GetName() + lidar_sub_topic_, &GazeboMavlinkInterface::LidarCallback, this);
@@ -521,6 +518,11 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
   fds[1].fd = _fd_aigle;
   fds[1].events = POLLIN;
   /***************************************************************************/
+
+  // Listen to the update event. This event is broadcast every
+  // simulation iteration.
+  updateConnection_ = event::Events::ConnectWorldUpdateBegin(
+      boost::bind(&GazeboMavlinkInterface::OnUpdate, this, _1));
 }
 
 // This gets called by the world update start event.
@@ -1105,6 +1107,7 @@ void send_fd(int sendfd){
   while (sendmsg(fd_unix_aigle, &msg, 0) < 0){
     gzerr << strerror(errno) << std::endl;
   }
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   gzmsg << "PX4 SOCKET SENT TO AIGLE :  FD = " << sendfd << std::endl;
 
   close(fd_unix_aigle);
