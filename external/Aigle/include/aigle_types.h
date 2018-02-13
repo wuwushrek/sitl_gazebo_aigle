@@ -21,6 +21,25 @@ typedef struct _gps_data {
 	uint8_t satellites_visible; /*< Number of satellites visible. If unknown, set to 255*/
 } gps_data;
 
+typedef struct _imu_data {
+	uint64_t time_usec; /*< Timestamp (microseconds, synced to UNIX time or since system boot)*/
+	float xacc; /*< X acceleration (m/s^2)*/
+	float yacc; /*< Y acceleration (m/s^2)*/
+	float zacc; /*< Z acceleration (m/s^2)*/
+	float xgyro; /*< Angular speed around X axis in body frame (rad / sec)*/
+	float ygyro; /*< Angular speed around Y axis in body frame (rad / sec)*/
+	float zgyro; /*< Angular speed around Z axis in body frame (rad / sec)*/
+	float xmag; /*< X Magnetic field (Gauss)*/
+	float ymag; /*< Y Magnetic field (Gauss)*/
+	float zmag; /*< Z Magnetic field (Gauss)*/
+	float abs_pressure; /*< Absolute pressure in millibar*/
+	float diff_pressure; /*< Differential pressure (airspeed) in millibar*/
+	float pressure_alt; /*< Altitude calculated from pressure*/
+	float temperature; /*< Temperature in degrees celsius*/
+	uint32_t fields_updated; /*< Bitmask for fields that have updated since last message, bit 0 = xacc, bit 12: temperature, bit 31: full reset of attitude/position/velocities/etc was performed in sim.*/
+} imu_data;
+
+
 typedef struct _motor_data{
 	uint8_t is_armed;
 	uint32_t motor_values[n_out_max];
