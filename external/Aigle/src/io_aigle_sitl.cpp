@@ -84,7 +84,34 @@ void IoAigleInterface::readMotors(){
 * Update data from GPS sensors 
 */
 void IoAigleInterface::updateGPS(const gps_data* m_position){
-	gps_pos_vel_ = *m_position;
+	// std::cout << "[AIGLE_GPS] lat = " << m_position->lat << " ; lon= " << m_position->lon << " ; alt= " << m_position->alt << std::endl;
+	// std::cout << "[AIGLE_GPS] vn = " << m_position->vn << " ; ve= " << m_position->ve << " ; vd= " << m_position->vd << std::endl;
+	prev_gps_pos_vel_ = *m_position;
+}
+
+/*
+* Update data from IMU sensors 
+*/
+void IoAigleInterface::updateIMU(const imu_data* m_imu){
+	// std::cout << "[AIGLE] xacc = " << m_imu->xacc << " ; yacc= " << m_imu->yacc << " ; zacc= " << m_imu->zacc << std::endl;
+	// std::cout << "[AIGLE] xgyro = " << m_imu->xgyro << " ; ygyro= " << m_imu->ygyro << " ; zgyro= " << m_imu->zgyro << std::endl;
+	prev_imu_raw_ = *m_imu;
+}
+
+/*
+* Update data from GPS sensors 
+*/
+void IoAigleInterface::readGPS(){
+	do_useless_calculation(ITERATION_GPS);
+	gps_pos_vel_ = prev_gps_pos_vel_;
+}
+
+/*
+* Update data from IMU sensors 
+*/
+void IoAigleInterface::readIMU(){
+	do_useless_calculation(ITERATION_IMU);
+	imu_raw_ = prev_imu_raw_;
 }
 
 /*
@@ -214,5 +241,14 @@ void IoAigleInterface::init_io_interface(int port_to_gazebo){
 	srcaddr_.sin_addr.s_addr =  htonl(INADDR_ANY);
 	srcaddr_.sin_port = htons(port_to_gazebo_);
 	addrlen_ = sizeof(srcaddr_);
+}
 
+int IoAigleInterface::do_useless_calculation(uint32_t max_count){
+	int res = 0;
+	for (uint32_t i = 0; i< max_count ; i++){
+		for(uint32_t j =0; j< max_count ; j++){
+			res += j-i;
+		}
+	}
+	return res;
 }
