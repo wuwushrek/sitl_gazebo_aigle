@@ -851,6 +851,11 @@
         </ode>
       </physics>
     </joint> -->
+    <plugin name='gps_plugin' filename='libgazebo_gps_plugin.so'>
+      <robotNamespace/>
+      <gpsNoise>true</gpsNoise>
+    </plugin>
+
     <plugin name='rotors_gazebo_imu_plugin' filename='librotors_gazebo_imu_plugin.so'>
       <robotNamespace></robotNamespace>
       <linkName>rover/imu_link</linkName>
@@ -864,9 +869,11 @@
       <accelerometerBiasCorrelationTime>300.0</accelerometerBiasCorrelationTime>
       <accelerometerTurnOnBiasSigma>0.196</accelerometerTurnOnBiasSigma>
     </plugin>
+
     <plugin name='mavlink_interface' filename='librotors_gazebo_mavlink_interface.so'>
       <robotNamespace></robotNamespace>
       <imuSubTopic>/imu</imuSubTopic>
+      <gpsSubTopic>/gps</gpsSubTopic>
       <motorSpeedCommandPubTopic>/gazebo/command/motor_speed</motorSpeedCommandPubTopic>
       <control_channels>
         <!--
