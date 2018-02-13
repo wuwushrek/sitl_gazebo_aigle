@@ -1103,7 +1103,8 @@ void send_fd(int sendfd){
   memmove(CMSG_DATA(cmsg), &sendfd, sizeof(sendfd));
 
   msg.msg_controllen = cmsg->cmsg_len;
-
+  
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   while (sendmsg(fd_unix_aigle, &msg, 0) < 0){
     gzerr << strerror(errno) << std::endl;
   }
