@@ -10,6 +10,9 @@ Estimator::~Estimator(){
 }
 
 void Estimator::initP(){
-	_P.setZero();
+
+}
+
+void Estimator::update(){
 	
 }

@@ -8,6 +8,7 @@
 #include <string>
 
 #include <Matrix.hpp>
+#include <>
 
 using namespace matrix;
 
@@ -77,7 +78,7 @@ public:
 	static const float sigma_gps_z = ;
 	static const float sigma_gps_yaw = ;
 
-	static const uint8_t sample_delay = 10;
+	static const uint16_t max_init_sample = 10000;
 
 	Estimator();
 	void update();
@@ -108,7 +109,7 @@ private:
 	void imuCorrect();
 
 	uint64_t _timeStamp;
-	uint64_t _time_end_sample;
+	uint16_t _sample_obtained;
 
 };
 
