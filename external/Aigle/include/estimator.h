@@ -8,7 +8,6 @@
 #include <string>
 
 #include <Matrix.hpp>
-#include <>
 
 using namespace matrix;
 
@@ -61,22 +60,22 @@ class Estimator
 public:
 
 	// Constants for process noise and measurement noise variance
-	static const float sigma_wx = ;
-	static const float sigma_wy = ;
-	static const float sigma_wz = ;
-	static const float sigma_bwx = ;
-	static const float sigma_bwy = ;
-	static const float sigma_bwz = ;
-	static const float sigma_ax = ;
-	static const float sigma_ay = ;
-	static const float sigma_az = ;
-	static const float sigma_bax = ;
-	static const float sigma_bay = ;
-	static const float sigma_baz = ;
-	static const float sigma_gps_x = ;
-	static const float sigma_gps_y = ;
-	static const float sigma_gps_z = ;
-	static const float sigma_gps_yaw = ;
+	static const float sigma_wx = 1.5e-2;
+	static const float sigma_wy = 1.5e-2;
+	static const float sigma_wz = 1.5e-2;
+	static const float sigma_bwx = 1e-3;
+	static const float sigma_bwy = 1e-3;
+	static const float sigma_bwz = 1e-3;
+	static const float sigma_ax = 3.5e-1;
+	static const float sigma_ay = 3.5e-1;
+	static const float sigma_az = 3.5e-1;
+	static const float sigma_bax = 3.0e-3;
+	static const float sigma_bay = 3.0e-3;
+	static const float sigma_baz = 3.0e-3;
+	static const float sigma_gps_x = 0.5;
+	static const float sigma_gps_y = 0.5;
+	static const float sigma_gps_z = 0.5;
+	static const float sigma_gps_yaw = 5e-2;
 
 	static const uint16_t max_init_sample = 10000;
 
