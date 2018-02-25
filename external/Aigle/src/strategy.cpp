@@ -1,21 +1,25 @@
 
 #include "strategy.h"
 
-Strategy::Strategy(){
-
+Strategy::Strategy(IoAigleInterface *aigle_io){
+	_aigle_io = aigle_io;
 }
 
-Strategy::~Strategy(){
+Strategy::~Strategy(){}
+
+void Strategy::execute_strategy(){
+	MODE situation = check_situation();
+	if (situation == MODE_SAFE){
+		_aigle_io->transferMotorsValue();
+	} else{
+		compute_strategies();
+	}
 }
 
-MODE Strategy::check_situation(const gps_data *current_gps_data){
+MODE Strategy::check_situation(){
 	return MODE_SAFE;
 }
 
-void Strategy::compute_strategies(const gps_data *current_gps_data){
+void Strategy::compute_strategies(){
 
-}
-
-const motor_data* Strategy::get_strategy_motors_data(){
-	return &strategy_motors_data;
 }

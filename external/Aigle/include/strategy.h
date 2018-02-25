@@ -1,26 +1,30 @@
 #ifndef STRATEGY_H
 #define STRATEGY_H
 
-#include "aigle_types.h"
+#ifdef AIGLE_SITL_MODE
+	#include "io_aigle_sitl.h"
+#else
+	#include "io_aigle.h"
+#endif
 
-#include <stdio.h>
-#include <string.h>
 
 class Strategy {
 
 public:
 
-	Strategy();
+	Strategy(IoAigleInterface *aigle_io);
 
-	MODE check_situation(const gps_data *current_gps_data);
-	void compute_strategies(const gps_data *current_gps_data);
-	const motor_data* get_strategy_motors_data();
+	void execute_strategy();
 
 	~Strategy();
 
 private:
+
+	MODE check_situation();
+	void compute_strategies();
+
 	topology m_topology;
-	motor_data strategy_motors_data;
+	IoAigleInterface *_aigle_io;
 };
 
 #endif //STRATEGY_H
