@@ -32,11 +32,11 @@ typedef struct _imu_data {
 	float xmag; /*< X Magnetic field (Gauss)*/
 	float ymag; /*< Y Magnetic field (Gauss)*/
 	float zmag; /*< Z Magnetic field (Gauss)*/
-	float abs_pressure; /*< Absolute pressure in millibar*/
-	float diff_pressure; /*< Differential pressure (airspeed) in millibar*/
-	float pressure_alt; /*< Altitude calculated from pressure*/
-	float temperature; /*< Temperature in degrees celsius*/
-	uint32_t fields_updated; /*< Bitmask for fields that have updated since last message, bit 0 = xacc, bit 12: temperature, bit 31: full reset of attitude/position/velocities/etc was performed in sim.*/
+	// float abs_pressure; /*< Absolute pressure in millibar*/
+	// float diff_pressure; /*< Differential pressure (airspeed) in millibar*/
+	// float pressure_alt; /*< Altitude calculated from pressure*/
+	// float temperature; /*< Temperature in degrees celsius*/
+	// uint32_t fields_updated; /*< Bitmask for fields that have updated since last message, bit 0 = xacc, bit 12: temperature, bit 31: full reset of attitude/position/velocities/etc was performed in sim.*/
 } imu_data;
 
 
