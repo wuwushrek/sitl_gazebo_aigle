@@ -17,6 +17,9 @@
 
 #include "aigle_types.h"
 
+#include "FreeRTOS.h"
+#include "queue.h"
+
 #define ITERATION_GPS 100
 #define ITERATION_IMU 10
 
@@ -41,6 +44,10 @@ public:
 	// utility function just for simulation
 	void collectSensorsData();
 
+	// Queue for IMU and GPS data values
+	void setGPSQueue(QueueHandle_t gpsQueueHandle);
+	void setIMUQueue(QueueHandle_t imuQueueHandle);
+
 	~IoAigleInterface();
 
 private:
@@ -59,6 +66,10 @@ private:
 	motor_data received_motors_values_;
 	gps_data gps_pos_vel_;
 	imu_data imu_raw_;
+
+	// Queue for GPS and IMU outcome values
+	QueueHandle_t gpsQueueHandle_;
+	QueueHandle_t imuQueueHandle_;
 
 	/* UDP communication structures attributes */
 	int port_to_gazebo_;

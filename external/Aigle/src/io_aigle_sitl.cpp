@@ -8,11 +8,15 @@ int receive_fd();
 IoAigleInterface::IoAigleInterface(){
 	motors_updated = false;
 	initializeIoInterface(DEFAULT_AIGLE_UDP_PORT);
+	imu_raw_.time_usec =  0;
+	gps_pos_vel_.time_usec = 0;
 }
 
 IoAigleInterface::IoAigleInterface(int port_to_gazebo){
 	motors_updated = false;
 	initializeIoInterface(port_to_gazebo);
+	imu_raw_.time_usec =  0;
+	gps_pos_vel_.time_usec = 0;
 }
 
 IoAigleInterface::~IoAigleInterface(){
@@ -26,6 +30,20 @@ IoAigleInterface::~IoAigleInterface(){
 
 // std::cout << "[AIGLE] xacc = " << m_imu->xacc << " ; yacc= " << m_imu->yacc << " ; zacc= " << m_imu->zacc << std::endl;
 // std::cout << "[AIGLE] xgyro = " << m_imu->xgyro << " ; ygyro= " << m_imu->ygyro << " ; zgyro= " << m_imu->zgyro << std::endl;
+
+/*
+* Set the QUEUE for GPS datas
+*/
+void IoAigleInterface::setGPSQueue(QueueHandle_t gpsQueueHandle){
+	gpsQueueHandle_ =  gpsQueueHandle;
+}
+
+/*
+* Set the QUEUE for IMU datas
+*/
+void IoAigleInterface::setIMUQueue(QueueHandle_t imuQueueHandle){
+	imuQueueHandle_ = imuQueueHandle;
+}
 
 /*
 * Update data from GPS sensors 
@@ -236,12 +254,14 @@ int receive_fd(){
 
 void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *destaddr, socklen_t *destaddrlen){
 	::poll(&fds[index], (sizeof(fds[index]) /sizeof(fds[index])), 0);
+	uint8_t updateGPS = 0;
+	uint8_t updateIMU = 0;
 	if (fds[index].revents & POLLIN){
 		int len;
 		if ( (len = recvfrom(fds[index].fd , buf_, sizeof(buf_), 0, (struct sockaddr *) destaddr, destaddrlen)) < 0){
 			return ;
 		}
-		// std::cout << (int) len << std::endl;
+
 		mavlink_message_t msg;
 		mavlink_status_t status;
 		for (unsigned int i = 0; i<len ; i++){
@@ -259,25 +279,26 @@ void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *dest
 					motors_updated = true;
 					// std::cout << std::endl;
 				} else if (msg.msgid == MAVLINK_MSG_ID_HIL_SENSOR) {
-					mavlink_hil_sensor_t imu;
-					mavlink_msg_hil_sensor_decode(&msg, &imu);
+					updateIMU = 1;
+					if (mavlink_msg_hil_sensor_get_time_usec(&msg) <= imu_raw_.time_usec){
+						continue;
+					}
+					imu_raw_.time_usec = mavlink_msg_hil_sensor_get_time_usec(&msg);
+					imu_raw_.xacc = mavlink_msg_hil_sensor_get_xacc(&msg);
+					imu_raw_.yacc = mavlink_msg_hil_sensor_get_yacc(&msg);
+					imu_raw_.zacc = mavlink_msg_hil_sensor_get_zacc(&msg);;
+					imu_raw_.xgyro = mavlink_msg_hil_sensor_get_xgyro(&msg);
+					imu_raw_.ygyro = mavlink_msg_hil_sensor_get_ygyro(&msg);
+					imu_raw_.zgyro = mavlink_msg_hil_sensor_get_zgyro(&msg);
+					imu_raw_.xmag = mavlink_msg_hil_sensor_get_xmag(&msg);
+					imu_raw_.ymag = mavlink_msg_hil_sensor_get_ymag(&msg);
+					imu_raw_.zmag = mavlink_msg_hil_sensor_get_zmag(&msg);
 					// std::cout << "IMU xacc = " << imu.xacc << std::endl;
-					imu_raw_.time_usec = imu.time_usec;
-					imu_raw_.xacc = imu.xacc;
-					imu_raw_.yacc = imu.yacc;
-					imu_raw_.zacc = imu.zacc;
-					imu_raw_.xgyro = imu.xgyro;
-					imu_raw_.ygyro = imu.ygyro;
-					imu_raw_.zgyro = imu.zgyro;
-					imu_raw_.xmag = imu.xmag;
-					imu_raw_.ymag = imu.ymag;
-					imu_raw_.zmag = imu.zmag;
-					imu_raw_.abs_pressure = imu.abs_pressure;
-					imu_raw_.diff_pressure = imu.diff_pressure;
-					imu_raw_.pressure_alt = imu.pressure_alt;
-					imu_raw_.temperature = imu.temperature;
-					imu_raw_.fields_updated = imu.fields_updated;
 				} else if (msg.msgid == MAVLINK_MSG_ID_HIL_GPS){
+					updateGPS = 1;
+					if (mavlink_msg_hil_gps_get_time_usec(&msg) <= gps_pos_vel_.time_usec){
+						continue;
+					}
 					mavlink_hil_gps_t gps;
 					mavlink_msg_hil_gps_decode(&msg, &gps);
 					// std::cout << "GPS lat = " << gps.lat << std::endl;
@@ -291,11 +312,17 @@ void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *dest
 					gps_pos_vel_.vn = gps.vn;
 					gps_pos_vel_.ve = gps.ve;
 					gps_pos_vel_.vd = gps.vd;
-					gps_pos_vel_.cog = gps_pos_vel_.cog;
+					gps_pos_vel_.cog = gps.cog;
 					gps_pos_vel_.fix_type = gps.fix_type;
 					gps_pos_vel_.satellites_visible = gps.satellites_visible;
 				}
 			}
 		}
+	}
+	if (updateGPS == 1){
+		xQueueOverwrite(gpsQueueHandle_, (void * ) &gps_pos_vel_);
+	}
+	if (updateIMU == 1){
+		xQueueOverwrite(imuQueueHandle_, (void * ) &imu_raw_);
 	}
 }
