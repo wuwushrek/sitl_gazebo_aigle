@@ -7,7 +7,8 @@ if (NOT CMAKE_INSTALL_PREFIX)
   set(CMAKE_INSTALL_PREFIX "/usr" CACHE STRING "install prefix" FORCE)
 endif()
 
-message(STATUS "install-prefix: ${CMAKE_INSTALL_PREFIX}")
+
+OPTION(AIGLE_SITL_MODE "Enable SITL mode " ON)
 
 project( Aigle VERSION 1.0.0)
 include(GNUInstallDirs)
@@ -20,17 +21,15 @@ include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH /usr/local/share/cmake/Modules)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-# find MAVLink
-find_package(MAVLink)
-
-OPTION(AIGLE_SITL_MODE "Enable SITL mode " ON)
 
 ## System dependencies are found with CMake's conventions
 find_package(PkgConfig REQUIRED)
-# find_package(gazebo REQUIRED)
 
-# include_directories(SYSTEM ${GAZEBO_INCLUDE_DIRS})
-# link_directories(${GAZEBO_LIBRARY_DIRS})
+# find MAVLink
+find_package(MAVLink)
+
+# find thread package
+find_package (Threads REQUIRED)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -std=c99 -Wno-deprecated-declarations")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS} -std=c++11 -Wno-deprecated-declarations")
@@ -40,12 +39,28 @@ set(${PROJECT_NAME}_INCLUDE_DIRS
     ${PROJECT_SOURCE_DIR}/include
     CACHE INTERNAL "${PROJECT_NAME}: Include Directories" FORCE)
 
-message(STATUS "Building ${PROJECT_NAME} .... ")
+set(FREERTOS_SRC_DIR 
+  ${CMAKE_CURRENT_SOURCE_DIR}/external/FreeRTOS/Source
+)
+
+set(FREERTOS_SRCS
+   ${FREERTOS_SRC_DIR}/event_groups.c
+   ${FREERTOS_SRC_DIR}/list.c
+   ${FREERTOS_SRC_DIR}/queue.c
+   ${FREERTOS_SRC_DIR}/tasks.c
+   ${FREERTOS_SRC_DIR}/timers.c
+   ${FREERTOS_SRC_DIR}/croutine.c
+   ${FREERTOS_SRC_DIR}/stream_buffer.c
+   ${FREERTOS_SRC_DIR}/portable/GCC/Linux/port.c
+   ${FREERTOS_SRC_DIR}/portable/MemMang/heap_3.c
+)
 
 set (Aigle_INCLUDE_DIRS
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}
   ${MAVLINK_INCLUDE_DIRS}
+  ${FREERTOS_SRC_DIR}/include
+  ${FREERTOS_SRC_DIR}/portable/GCC/Linux
 )
 
 include_directories(${Aigle_INCLUDE_DIRS})
@@ -60,38 +75,41 @@ include_directories(${Aigle_INCLUDE_DIRS})
 # )
 
 set(SRCS
-	src/aigle.cpp
+  src/aigle.cpp
 	src/io_aigle_sitl.cpp
 	src/strategy.cpp
+  ${FREERTOS_SRCS}
 )
 
-add_library(Aigle SHARED ${SRCS})
-target_include_directories(Aigle PUBLIC include)
+# create .so
+# add_library(Aigle SHARED ${SRCS})
+# target_include_directories(Aigle PUBLIC include)
+
+# Create an executable
+add_executable(main ${SRCS})
+target_link_libraries(main ${CMAKE_THREAD_LIBS_INIT})
+
 if (AIGLE_SITL_MODE)
     message(STATUS "COMPILING IN SITL MODE ...")
-    target_compile_options(Aigle PUBLIC -DAIGLE_SITL_MODE)
+    # target_compile_options(Aigle PUBLIC -DAIGLE_SITL_MODE)
+    target_compile_options(main PUBLIC -DAIGLE_SITL_MODE)
 else()
     message(STATUS "COMPILING IN NON SITL MODE ...")
 endif()
 
-# add_executable(main ${SRCS})
-# target_compile_options(main PUBLIC -DAIGLE_SITL_MODE)
+# # Generate the Config file from the .in file, doing @VAR@ substitution only
+# configure_file(AigleConfig.cmake.in FindAigle.cmake @ONLY)
 
-# arget_link_libraries(main ${GAZEBO_LIBRARIES})
+# # INSTALL STEPS
+# INSTALL(
+#   TARGETS Aigle
+#   RUNTIME DESTINATION lib
+#   LIBRARY DESTINATION lib)
 
-# Generate the Config file from the .in file, doing @VAR@ substitution only
-configure_file(AigleConfig.cmake.in FindAigle.cmake @ONLY)
+# INSTALL(
+#   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+#   DESTINATION include)
 
-# INSTALL STEPS
-INSTALL(
-  TARGETS Aigle
-  RUNTIME DESTINATION lib
-  LIBRARY DESTINATION lib)
-
-INSTALL(
-  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-  DESTINATION include)
-
-INSTALL(
-  FILES ${CMAKE_BINARY_DIR}/FindAigle.cmake
-  DESTINATION ${CMAKE_INSTALL_PREFIX})
+# INSTALL(
+#   FILES ${CMAKE_BINARY_DIR}/FindAigle.cmake
+#   DESTINATION ${CMAKE_INSTALL_PREFIX})
