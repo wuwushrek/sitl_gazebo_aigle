@@ -46,8 +46,8 @@ link_directories(${GAZEBO_LIBRARY_DIRS})
 add_subdirectory( external/OpticalFlow OpticalFlow )
 set( OpticalFlow_LIBS "OpticalFlow" )
 
-add_subdirectory( external/Aigle Aigle)
-set( Aigle_LIBS "Aigle")
+# add_subdirectory( external/Aigle Aigle)
+# set( Aigle_LIBS "Aigle")
 
 # for ROS subscribers and publishers
 if (BUILD_ROS_INTERFACE)
@@ -139,7 +139,7 @@ endforeach()
 include_directories(
   include
   ${OpticalFlow_INCLUDE_DIRS}
-  ${Aigle_INCLUDE_DIRS}
+  # ${Aigle_INCLUDE_DIRS}
   ${GAZEBO_INCLUDE_DIRS}
   ${GAZEBO_MSG_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
@@ -254,7 +254,7 @@ add_library(gazebo_uuv_plugin SHARED src/gazebo_uuv_plugin.cpp)
 add_library(gazebo_gps_plugin SHARED src/gazebo_gps_plugin.cpp)
 
 add_library(gazebo_aigle_plugin SHARED src/gazebo_mavlink_aigle_interface.cpp)
-target_link_libraries(gazebo_aigle_plugin ${Aigle_LIBS})
+# target_link_libraries(gazebo_aigle_plugin ${Aigle_LIBS})
 
 set(plugins
   rotors_gazebo_controller_interface
