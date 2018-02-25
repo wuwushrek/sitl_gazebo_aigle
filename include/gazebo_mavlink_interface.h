@@ -254,17 +254,16 @@ private:
   int mavlink_udp_port_;
 
   //---------------------------------------------------------------------------
-  //Aigle receive port , Aigle socket definition + Aigle useful variable
-  #define SOCKET_NAME "/tmp/share_fd_gazebo_aigle.socket"
-  static constexpr uint32_t kDefaultMavlinkAigleUdpPort = 14570;
-  std::future<void> parrallel_sendfd; 
+  //Aigle receive port , Aigle socket definition + Aigle useful variables
+  #define SOCKET_NAME_AIGLE "/tmp/share_fd_gazebo_aigle.socket"
+  #define SOCKET_NAME_AIGLE_PLUGIN "/tmp/share_fd_gazebo_aigle_plugin.socket"
+  
+  std::future<void> parrallel_sendfd_aigle; 
+  std::future<void> parrallel_sendfd_aigle_plugin;
 
   int _fd_aigle;
   struct sockaddr_in _myaddr_aigle;
-  struct sockaddr_in _srcaddr_aigle;
-  socklen_t _addrlen_aigle;
-
-  int mavlink_aigle_udp_port_;
+  // int mavlink_aigle_udp_port_;
   //---------------------------------------------------------------------------
 
 };

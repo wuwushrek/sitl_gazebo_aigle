@@ -5,6 +5,8 @@ namespace gazebo{
 
 GZ_REGISTER_MODEL_PLUGIN(GazeboMavlinkAigleInterface);
 
+int receive_fd();
+
 GazeboMavlinkAigleInterface::~GazeboMavlinkAigleInterface() {
   event::Events::DisconnectWorldUpdateBegin(updateConnection_);
 }
@@ -36,15 +38,21 @@ void GazeboMavlinkAigleInterface::Load(physics::ModelPtr _model, sdf::ElementPtr
 	getSdfParam<std::string>(_sdf, "gpsSubTopic", gps_sub_topic_, gps_sub_topic_);
 
 	// Get IMU topic name from sdf file
-  	getSdfParam<std::string>(_sdf, "imuSubTopic", imu_sub_topic_, imu_sub_topic_);
-  	groundtruth_sub_topic_ = "/groundtruth";
+  getSdfParam<std::string>(_sdf, "imuSubTopic", imu_sub_topic_, imu_sub_topic_);
+  groundtruth_sub_topic_ = "/groundtruth";
 
-	// Initialize AIGLE depending on the port value received in the sdf file
-	if (_sdf->HasElement("mavlink_aigle_udp_port")){
-		init_aigle(_sdf->GetElement("mavlink_aigle_udp_port")->Get<int>());
-	} else {
-		init_aigle(kDefaultMavlinkAigleUdpPort);
-	}
+  if (_sdf->HasElement("mavlink_aigle_udp_port")) {
+    aigle_port = _sdf->GetElement("mavlink_aigle_udp_port")->Get<int>();
+  }
+
+  // Initialize aigle destination address
+  memset( (char * )&srcaddr_ , 0 , sizeof(srcaddr_));
+  srcaddr_.sin_family = AF_INET;
+  srcaddr_.sin_addr.s_addr =  htonl(INADDR_ANY);
+  srcaddr_.sin_port = htons(aigle_port);
+
+  // Get file descriptor for aigle port from the vehicle plugin
+  _fd_aigle = receive_fd(); 
 
 	// Magnetic field data for Zurich from WMM2015 (10^5xnanoTesla (N, E D) n-frame )
 	// mag_n_ = {0.21523, 0.00771, -0.42741};
@@ -75,11 +83,11 @@ void GazeboMavlinkAigleInterface::OnUpdate(const common::UpdateInfo&  /*_info*/)
 	// Execute AIGLE strategy by reading motors value if availabled
 	// And writing motors output depending of the current state of the robot
 	// Cf aigle.h & aigle.cpp documentation for more details
-	execute_strategy();
+	// execute_strategy();
 }
 
 void GazeboMavlinkAigleInterface::GpsCallback(GpsPtr& gps_msg){
-	gps_data m_gps_position;
+	mavlink_hil_gps_t m_gps_position;
 	m_gps_position.time_usec = gps_msg->time() * 1e6;
 	m_gps_position.fix_type = 3;
 	m_gps_position.lat = gps_msg->latitude_deg() * 1e7;
@@ -97,8 +105,13 @@ void GazeboMavlinkAigleInterface::GpsCallback(GpsPtr& gps_msg){
 	m_gps_position.cog = static_cast<uint16_t>(GetDegrees360(cog) * 100.0);
 	m_gps_position.satellites_visible = 10;
 
+  // send HIL_GPS Mavlink msg
+  mavlink_message_t msg;
+  mavlink_msg_hil_gps_encode_chan(1, 200, MAVLINK_COMM_0, &msg, &m_gps_position);
+  send_mavlink_message(&msg);
+
 	//Update aigle_io GPS position
-	aigle_io.updateGPS(&m_gps_position);
+	// aigle_io.updateGPS(&m_gps_position);
 }
 
 void GazeboMavlinkAigleInterface::GroundtruthCallback(GtPtr& groundtruth_msg){
@@ -179,7 +192,7 @@ void GazeboMavlinkAigleInterface::ImuCallback(ImuPtr& imu_message) {
         imu_message->angular_velocity().z()));
   math::Vector3 mag_b = q_nb.RotateVectorReverse(mag_n) + mag_noise_b;
 
-  imu_data sensor_msg;
+  mavlink_hil_sensor_t sensor_msg;
   sensor_msg.time_usec = world_->GetSimTime().Double() * 1e6;
   sensor_msg.xacc = accel_b.x;
   sensor_msg.yacc = accel_b.y;
@@ -234,8 +247,81 @@ void GazeboMavlinkAigleInterface::ImuCallback(ImuPtr& imu_message) {
 
   sensor_msg.fields_updated = 4095;
 
-  aigle_io.updateIMU(&sensor_msg);
+  mavlink_message_t msg;
+  mavlink_msg_hil_sensor_encode_chan(1, 200, MAVLINK_COMM_0, &msg, &sensor_msg);
+  send_mavlink_message(&msg);
+  // aigle_io.updateIMU(&sensor_msg);
 
+}
+
+void GazeboMavlinkAigleInterface::send_mavlink_message(const mavlink_message_t *message)
+{
+  uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+  int packetlen = mavlink_msg_to_send_buffer(buffer, message);
+  ssize_t len = sendto(_fd_aigle, buffer, packetlen, 0, (struct sockaddr *) &srcaddr_, sizeof(srcaddr_));
+  // ssize_t len = sendto(_fd_aigle, buffer, packetlen, 0);
+
+  if (len <= 0) {
+    printf("Failed sending mavlink message\n");
+  }
+}
+
+/*
+* Another Routine to receive the file descriptor from another process
+* Here the file descriptor will point at the mavlink port to receive/send motors/imu,gps data
+*/
+int receive_fd(){
+
+  // Create a UNIX socket and the addresses associated with the socket
+  int fd_unix;
+  struct sockaddr_un send_addr;
+
+  // Try to initalize the socket as TCP socket
+  if((fd_unix = socket(AF_UNIX, SOCK_STREAM , 0)) < 0){
+    gzerr << "[AIGLE] Failed to create Local UNIX socket !" << std::endl;
+    return -1;
+  }
+
+  // Initialize the current socket address 
+  memset(&send_addr , 0 , sizeof(struct sockaddr_un));
+  send_addr.sun_family =  AF_UNIX;
+  strcpy(send_addr.sun_path , SOCKET_NAME_AIGLE_PLUGIN);
+
+  // Try to connect to the local server
+  while ( connect(fd_unix , (struct sockaddr *) &send_addr , ( strlen(send_addr.sun_path) + sizeof(send_addr.sun_family))) < 0);
+  gzmsg << " Connected to local socket unix \n";
+  // Define structure for sending file descriptor amongst different process
+  struct msghdr msg = {0};
+  char useless[4];
+
+  //Structure buffer for sending message with ancillary datas
+  struct iovec io[1];
+  io[0].iov_base = (void *) useless;
+  io[0].iov_len = sizeof(useless);
+
+  // Fill the message structure with the message we want to send
+  msg.msg_iov = io;
+  msg.msg_iovlen = 1;
+
+  // Initialize the anicllary data structure
+  char buf[256];
+  msg.msg_control = buf;
+  msg.msg_controllen = sizeof(buf);
+
+  // Try to receive the message with the file descriptor information
+  if (recvmsg(fd_unix,&msg,0) < 0) {
+    gzmsg << "[AIGLE] Trying to get fd from robot plugin !!" << std::endl;
+  }
+
+  // Extract the ancillary data we wanted to obtain
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  int result;
+  memmove(&result, CMSG_DATA(cmsg), sizeof(result));
+
+  gzmsg << "[AIGLE] Aigle port socket fd = " << result <<  std::endl;
+  // Close the socket since not use anymore
+  close(fd_unix);
+  return result;
 }
 
 }

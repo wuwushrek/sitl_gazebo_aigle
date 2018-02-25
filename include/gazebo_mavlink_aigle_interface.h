@@ -7,6 +7,9 @@
 #include <random>
 #include <math.h>
 #include <string>
+
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <boost/bind.hpp>
 
 #include <gazebo/gazebo.hh>
@@ -25,8 +28,11 @@
 #include <mavlink/v2.0/common/mavlink.h>
 
 #include <geo_mag_declination.h>
+// #include <future>
 
-#include "aigle.h"
+// #include "aigle.h"
+
+#define SOCKET_NAME_AIGLE_PLUGIN "/tmp/share_fd_gazebo_aigle_plugin.socket"
 
 static const uint32_t kDefaultMavlinkAigleUdpPort = 14570;
 
@@ -40,7 +46,8 @@ typedef const boost::shared_ptr<const gps_msgs::msgs::Groundtruth> GtPtr;
 class GazeboMavlinkAigleInterface : public ModelPlugin {
 public:
 	GazeboMavlinkAigleInterface() : ModelPlugin(),
-	namespace_("")
+	namespace_(""),
+	aigle_port(kDefaultMavlinkAigleUdpPort)
 	{}
 
 	~GazeboMavlinkAigleInterface();
@@ -75,6 +82,8 @@ private:
 	void ImuCallback(ImuPtr& imu_msg);
 	void GroundtruthCallback(GtPtr& groundtruth_msg);
 
+	void send_mavlink_message(const mavlink_message_t *message);
+
 	// For baro estimation
 	double alt_home = 488.0;   // meters
 
@@ -87,6 +96,11 @@ private:
 
 	std::default_random_engine rand_;
 	std::normal_distribution<float> randn_;
+
+	int aigle_port;
+	int _fd_aigle;
+	struct sockaddr_in srcaddr_;
+	// std::future<void> parrallel_recvfd_aigle;	
 };
 
 }
