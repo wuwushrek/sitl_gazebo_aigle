@@ -2,10 +2,29 @@
 
 int main(void ){
 
+	// Create queue for message exchange between some tasks
+	QueueHandle_t gpsQueueHandle, imuQueueHandle, estQueueHandle;
+	gpsQueueHandle = xQueueCreate(1 , sizeof (gps_data));
+	imuQueueHandle = xQueueCreate(1 , sizeof (imu_data));
+
+	// Check if creattion was done
+	if (gpsQueueHandle == NULL){
+		printf ("[AIGLE] Could not create gps queue \n");
+		return 0;
+	}
+	if(imuQueueHandle == NULL){
+		printf("[AIGLE] Could not create imu queue \n");
+		return 0;
+	}
+
 	// Initialize aigle io interface with default port and queues elements
 	IoAigleInterface aigle_io;
+	aigle_io.setGPSQueue(gpsQueueHandle);
+	aigle_io.setIMUQueue(imuQueueHandle);
+
 	// Initialize strategy class with aigle_io instance and queues elements
 	Strategy strategy(&aigle_io);
+
 	// Initialize estimator class 
 
 	/* Tasks creation */
