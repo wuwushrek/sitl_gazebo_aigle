@@ -675,6 +675,7 @@ void GazeboMavlinkInterface::ImuCallback(ImuPtr& imu_message) {
   sensor_msg.xmag = mag_b.x;
   sensor_msg.ymag = mag_b.y;
   sensor_msg.zmag = mag_b.z;
+  gzmsg << model_->GetWorldPose() << std::endl;;
 
   // calculate abs_pressure using an ISA model for the tropsphere (valid up to 11km above MSL)
   const float lapse_rate = 0.0065f;  // reduction in temperature with altitude (Kelvin/m)
@@ -726,7 +727,9 @@ void GazeboMavlinkInterface::ImuCallback(ImuPtr& imu_message) {
     optflow_gyro += gyro_b * (dt_us / 1000000.0f);
     last_dt_us = sensor_msg.time_usec;
   }
-
+  //gzmsg << sensor_msg.zacc << std::endl;
+  //gzmsg << sensor_msg.xacc << std::endl;
+  //gzmsg << sensor_msg.yacc << std::endl;
   mavlink_message_t msg;
   mavlink_msg_hil_sensor_encode_chan(1, 200, MAVLINK_COMM_0, &msg, &sensor_msg);
   send_mavlink_message(&msg);
