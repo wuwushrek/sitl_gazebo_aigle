@@ -57,6 +57,7 @@ set(FREERTOS_SRCS
 
 set (Aigle_INCLUDE_DIRS
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/external/Matrix
   ${CMAKE_CURRENT_BINARY_DIR}
   ${MAVLINK_INCLUDE_DIRS}
   ${FREERTOS_SRC_DIR}/include
@@ -78,6 +79,7 @@ set(SRCS
   src/aigle.cpp
 	src/io_aigle_sitl.cpp
 	src/strategy.cpp
+  src/estimator.cpp
   ${FREERTOS_SRCS}
 )
 
@@ -92,7 +94,7 @@ target_link_libraries(main ${CMAKE_THREAD_LIBS_INIT})
 if (AIGLE_SITL_MODE)
     message(STATUS "COMPILING IN SITL MODE ...")
     # target_compile_options(Aigle PUBLIC -DAIGLE_SITL_MODE)
-    target_compile_options(main PUBLIC -DAIGLE_SITL_MODE)
+    target_compile_options(main PUBLIC -DAIGLE_SITL_MODE -DSUPPORT_STDIOSTREAM)
 else()
     message(STATUS "COMPILING IN NON SITL MODE ...")
 endif()
