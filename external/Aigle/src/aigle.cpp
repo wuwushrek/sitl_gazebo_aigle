@@ -26,9 +26,13 @@ int main(void ){
 	Strategy strategy(&aigle_io);
 
 	// Initialize estimator class 
+	Estimator estimator;
+	estimator.setGPSQueue(gpsQueueHandle);
+	estimator.setIMUQueue(imuQueueHandle);
 
 	/* Tasks creation */
 	BaseType_t status;
+
 	/* Create periodic imu read task */
 	status = xTaskCreate(task_imu_read, "imu", STACK_IMU_SIZE, (void *) &aigle_io, SENSOR_READ_PRIORITY, NULL);
 	if (status != pdPASS){
@@ -51,7 +55,11 @@ int main(void ){
 	}
 
 	/* Create EKF estimator task */
-
+	status = xTaskCreate(task_ekf_estimator, "ekf", STACK_ESTIM_SIZE, (void *) &estimator, ESTIMATOR_PRIORITY, NULL);
+	if (status != pdPASS){
+		printf("[EKF] COULD_NOT_ALLOCATE_REQUIRED_MEMORY \n");
+		return 0;
+	}
 
 	#ifdef AIGLE_SITL_MODE
 	/* Create periodic gps read task */
@@ -94,13 +102,22 @@ void task_gps_read(void*  aigle_instance){
 
 void task_strategy_control(void* strategy_instance){
 	Strategy *strategy = (Strategy *) strategy_instance;
+	TickType_t nextWakeTime;
+	const TickType_t periodToTick = pdMS_TO_TICKS(STRAT_DEADLINE);
+	printf("%s\n", "[STRAT] Stratedy task started");
+	nextWakeTime = xTaskGetTickCount();
 	while(1){
+		vTaskDelayUntil(&nextWakeTime, periodToTick);
 		strategy->execute_strategy();
 	}
 }
 
-void task_ekf_estimator(void* estimator){
-	while(1);
+void task_ekf_estimator(void* estim){
+	Estimator *estimator = (Estimator *) estim;
+	printf("%s\n", "[EKF] EKF estimator task started");
+	while(1){
+		estimator->update();
+	}
 }
 
 #ifdef AIGLE_SITL_MODE

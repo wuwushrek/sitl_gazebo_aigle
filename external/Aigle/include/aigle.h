@@ -13,15 +13,18 @@
 #endif
 
 #include "strategy.h"
+#include "estimator.h"
 
 /* Deadlines are in millisecond */
 #ifdef AIGLE_SITL_MODE
-	#define SENSORS_DEADLINE 10UL
-	#define IMU_DEADLINE 10UL
-	#define GPS_DEADLINE 100UL
+	#define SENSORS_DEADLINE 	5UL
+	#define IMU_DEADLINE 		5UL
+	#define GPS_DEADLINE 		200UL
+	#define STRAT_DEADLINE		5UL
 #else
-	#define IMU_DEADLINE 8UL
-	#define GPS_DEADLINE 100UL
+	#define IMU_DEADLINE 		8UL
+	#define GPS_DEADLINE 		100UL
+	#define STRAT_DEADLINE		5UL
 #endif
 /********************************/
 
