@@ -54,16 +54,20 @@ void GazeboMavlinkAigleInterface::Load(physics::ModelPtr _model, sdf::ElementPtr
   // Get file descriptor for aigle port from the vehicle plugin
   _fd_aigle = receive_fd(); 
 
-	// Magnetic field data for Zurich from WMM2015 (10^5xnanoTesla (N, E D) n-frame )
-	// mag_n_ = {0.21523, 0.00771, -0.42741};
-	// We set the world Y component to zero because we apply
-	// the declination based on the global position,
-	// and so we need to start without any offsets.
-	// The real value for Zurich would be 0.00771
-	// frame d is the magnetic north frame
-	mag_d_.x = 0.21523;
-	mag_d_.y = 0;
-	mag_d_.z = -0.42741;
+	// // Magnetic field data for Zurich from WMM2015 (10^5xnanoTesla (N, E D) n-frame )
+	// // mag_n_ = {0.21523, 0.00771, -0.42741};
+	// // We set the world Y component to zero because we apply
+	// // the declination based on the global position,
+	// // and so we need to start without any offsets.
+	// // The real value for Zurich would be 0.00771
+	// // frame d is the magnetic north frame
+	// mag_d_.x = 0.21523;
+	// mag_d_.y = 0;
+	// mag_d_.z = -0.42741;
+
+  mag_d_.x = 1.0;
+  mag_d_.y = 0;
+  mag_d_.z = 0.0;
 
 	//	Used for altitude estimation 
 	gravity_W_ = world_->GetPhysicsEngine()->GetGravity();
@@ -127,87 +131,58 @@ void GazeboMavlinkAigleInterface::ImuCallback(ImuPtr& imu_message) {
   // frames
   // g - gazebo (ENU), east, north, up
   // r - rotors imu frame (FLU), forward, left, up
-  // b - px4 (FRD) forward, right down
-  // n - px4 (NED) north, east, down
+  // n - px4  (NED)
   math::Quaternion q_gr = math::Quaternion(
       imu_message->orientation().w(),
       imu_message->orientation().x(),
       imu_message->orientation().y(),
       imu_message->orientation().z());
 
-  // q_br
-  /*
-     tf.euler2quat(*tf.mat2euler([
-   #        F  L  U
-          [1, 0, 0],  # F
-          [0, -1, 0], # R
-          [0, 0, -1]  # D
-      ]
-     )).round(5)
-   */
-  math::Quaternion q_br(0, 1, 0, 0);
-
-
-  // q_ng
-  /*
-     tf.euler2quat(*tf.mat2euler([
-   #        N  E  D
-          [0, 1, 0],  # E
-          [1, 0, 0],  # N
-          [0, 0, -1]  # U
-      ]
-     )).round(5)
-   */
-  math::Quaternion q_ng(0, 0.70711, 0.70711, 0);
-
-  math::Quaternion q_gb = q_gr * q_br.GetInverse();
-  math::Quaternion q_nb = q_ng * q_gb;
-
   math::Vector3 pos_g = model_->GetWorldPose().pos;
-  math::Vector3 pos_n = q_ng.RotateVector(pos_g);
 
   //gzerr << "got imu: " << C_W_I << "\n";
   //gzerr << "got pose: " << T_W_I.rot << "\n";
-  float declination = get_mag_declination(groundtruth_lat_rad, groundtruth_lon_rad);
+  // float declination = get_mag_declination(groundtruth_lat_rad, groundtruth_lon_rad);
 
-  math::Quaternion q_dn(0.0, 0.0, declination);
-  math::Vector3 mag_n = q_dn.RotateVector(mag_d_);
+  // math::Quaternion q_dn(0.0, 0.0, declination);
+  // math::Vector3 mag_n = q_dn.RotateVector(q_ng. mag_d_);
 
-  math::Vector3 vel_b = q_br.RotateVector(model_->GetRelativeLinearVel());
-  math::Vector3 vel_n = q_ng.RotateVector(model_->GetWorldLinearVel());
-  math::Vector3 omega_nb_b = q_br.RotateVector(model_->GetRelativeAngularVel());
+  math::Vector3 vel_r = model_->GetRelativeLinearVel();
+  math::Vector3 vel_g = model_->GetWorldLinearVel();
+  math::Vector3 omega_nb_g = model_->GetRelativeAngularVel();
 
   math::Vector3 mag_noise_b(
       0.01 * randn_(rand_),
       0.01 * randn_(rand_),
       0.01 * randn_(rand_));
 
-  math::Vector3 accel_b = q_br.RotateVector(math::Vector3(
+  math::Vector3 accel_r = math::Vector3(
         imu_message->linear_acceleration().x(),
         imu_message->linear_acceleration().y(),
-        imu_message->linear_acceleration().z()));
-  math::Vector3 gyro_b = q_br.RotateVector(math::Vector3(
+        imu_message->linear_acceleration().z());
+  math::Vector3 gyro_r = math::Vector3(
         imu_message->angular_velocity().x(),
         imu_message->angular_velocity().y(),
-        imu_message->angular_velocity().z()));
-  math::Vector3 mag_b = q_nb.RotateVectorReverse(mag_n) + mag_noise_b;
+        imu_message->angular_velocity().z());
+  math::Vector3 mag_r = q_gr.RotateVectorReverse(mag_d_) + mag_noise_b;
+  // gzerr << mag_b << std::endl;
 
   mavlink_hil_sensor_t sensor_msg;
   sensor_msg.time_usec = world_->GetSimTime().Double() * 1e6;
-  sensor_msg.xacc = accel_b.x;
-  sensor_msg.yacc = accel_b.y;
-  sensor_msg.zacc = accel_b.z;
-  sensor_msg.xgyro = gyro_b.x;
-  sensor_msg.ygyro = gyro_b.y;
-  sensor_msg.zgyro = gyro_b.z;
-  sensor_msg.xmag = mag_b.x;
-  sensor_msg.ymag = mag_b.y;
-  sensor_msg.zmag = mag_b.z;
+  sensor_msg.xacc = accel_r.x;
+  sensor_msg.yacc = accel_r.y;
+  sensor_msg.zacc = accel_r.z;
+  sensor_msg.xgyro = gyro_r.x;
+  sensor_msg.ygyro = gyro_r.y;
+  sensor_msg.zgyro = gyro_r.z;
+  sensor_msg.xmag = mag_r.x;
+  sensor_msg.ymag = mag_r.y;
+  sensor_msg.zmag = mag_r.z;
 
   // calculate abs_pressure using an ISA model for the tropsphere (valid up to 11km above MSL)
   const float lapse_rate = 0.0065f;  // reduction in temperature with altitude (Kelvin/m)
   const float temperature_msl = 288.0f;  // temperature at MSL (Kelvin)
-  float alt_msl = (float)alt_home - pos_n.z;
+  float alt_msl = (float)alt_home - pos_g.z;
   float temperature_local = temperature_msl - lapse_rate * alt_msl;
   float pressure_ratio = powf((temperature_msl / temperature_local), 5.256f);
   const float pressure_msl = 101325.0f;  // pressure at MSL
@@ -240,7 +215,7 @@ void GazeboMavlinkAigleInterface::ImuCallback(ImuPtr& imu_message) {
   sensor_msg.pressure_alt = alt_msl - abs_pressure_noise / (gravity_W_.GetLength() * rho);
 
   // calculate differential pressure in hPa
-  sensor_msg.diff_pressure = 0.005f * rho * vel_b.x * vel_b.x;
+  sensor_msg.diff_pressure = 0.005f * rho * vel_r.x * vel_r.x;
 
   // calculate temperature in Celsius
   sensor_msg.temperature = temperature_local - 273.0f;
