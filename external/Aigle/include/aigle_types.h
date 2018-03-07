@@ -47,13 +47,20 @@ typedef struct _motor_data{
 } motor_data;
 
 typedef struct _topology {
-	int x_max;
-	int x_min;
-	int y_max;
-	int y_min;
-	int z_max;
-	int z_min;
+	float x_max;
+	float x_min;
+	float y_max;
+	float y_min;
+	float z_max;
+	float z_min;
 } topology;
+
+typedef struct _estimate_position {
+	float x;
+	float y;
+	float z;
+	float yaw;
+} estimate_position;
 
 typedef enum {
 	MODE_SAFE,

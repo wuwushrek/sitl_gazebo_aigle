@@ -91,17 +91,20 @@ public:
 	static constexpr float sigma_a = 0.004; // 3.5e-1;
 	// static const float sigma_ay = 3.5e-1;
 	// static const float sigma_az = 3.5e-1;
-	static constexpr float sigma_ba = 0.006;// 3.0e-3;
+	static constexpr float sigma_ba = 0.0006;// 3.0e-3;
 	// static const float sigma_bay = 3.0e-3;
 	// static const float sigma_baz = 3.0e-3;
 	static constexpr float sigma_mag = 1e-2;
-	static constexpr float sigma_gps_x = 0.5;
-	static constexpr float sigma_gps_y = 0.5;
-	static constexpr float sigma_gps_z = 0.5;
-	static constexpr float sigma_gps_yaw = 5e-2;
+	static constexpr float sigma_gps_x = 0.01;
+	static constexpr float sigma_gps_y = 0.01;
+	static constexpr float sigma_gps_z = 0.01;
+	static constexpr float sigma_gps_yaw = 5e-3;
 
 	static constexpr float corr_time_acc = 3.0e-3f;
 	static constexpr float corr_time_gyro = 1.0e-3f;
+
+
+	static const uint64_t mag_update_time = 100; //ms
 
 	static const uint16_t max_init_sample = 1000;
 
@@ -111,6 +114,7 @@ public:
 
 	void setGPSQueue(QueueHandle_t gpsQueueHandle);
 	void setIMUQueue(QueueHandle_t imuQueueHandle);
+	void setEstimatePosQueue(QueueHandle_t estimQueue);
 
 	~Estimator();
 
@@ -126,6 +130,8 @@ private:
 	matrix::Matrix<float, n_X , n_U> _Fu;		// Gradient matrix for input function
 	matrix::Dcm<float> _Rbn;					// Direct cosinux matrix
 	matrix::Vector3f  _a_next; 					// Not include Rbn transformation
+	matrix::Vector3f a_next;					// Include true Rbn and gravity
+	matrix::Vector3f w_next;
 	matrix::Vector3f _w_dt;
 	matrix::Quatf _q_w_dt;
 
@@ -134,25 +140,23 @@ private:
 
 	void initSystem(float currentTimeStamp);
 
-	void initX();
-	void initQ();
-
-	void gpsInit();
-	void gpsCorrect();
-
-	void imuInit();
-	void imuCorrect();
+	void gpsCorrect(const gps_data *m_pos);
+	void yawCorrect(const matrix::Vector3f &mag_data);
+	void imuCorrect(const matrix::Vector3f &acc_data);
 
 	void project(double lat , double lon , float *x , float *y);
 
 	uint64_t _timeStamp;
 	uint16_t _sample_obtained;
+
+	uint64_t _mag_timeout;
 	// uint8_t _first_update;
 	// uint64_t _firstTimeUpdate;
 
 	// Queue to receive gps and imu data
 	QueueHandle_t _gpsQueueHandle;
 	QueueHandle_t _imuQueueHandle;
+	QueueHandle_t _estimQueue;
 
 	// Initial mean of gravity , magnetometer and gyro bias estimate 
 	matrix::Vector3f init_g_b;				// gravity in body frame

@@ -39,7 +39,7 @@
 	#define STACK_IMU_SIZE			100
 	#define STACK_GPS_SIZE			100
 	#define STACK_STRAT_SIZE		1000
-	#define STACK_ESTIM_SIZE		1000
+	#define STACK_ESTIM_SIZE		2000
 #else
 	#define STACK_IMU_SIZE			50
 	#define STACK_GPS_SIZE			50

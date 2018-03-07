@@ -28,6 +28,7 @@ Estimator::Estimator(){
 	// Initial timeStamp constant
 	_timeStamp = 0;
 	_sample_obtained = 0;
+	_mag_timeout = 0;
 
 	// initial bias, acc and mag 
 	init_g_b.setZero();
@@ -49,6 +50,10 @@ void Estimator::setIMUQueue(QueueHandle_t imuQueueHandle){
 	_imuQueueHandle = imuQueueHandle;
 }
 
+void Estimator::setEstimatePosQueue(QueueHandle_t estimQueue){
+	_estimQueue = estimQueue;
+}
+
 void Estimator::update(){
 	// Updated values from IMU sensor
 	imu_data last_imu;
@@ -61,12 +66,13 @@ void Estimator::update(){
 	// get current time and deltat
 	uint64_t currentTimeStamp = xTaskGetTickCount() * portTICK_PERIOD_MS;
 	float dt = (currentTimeStamp - _timeStamp)/1.0e3f;
+	_mag_timeout += (currentTimeStamp - _timeStamp);
 	_timeStamp = currentTimeStamp;
 
 	// Still gathering data for initial estimation
 	if (_sample_obtained < max_init_sample){
 		// We calculate an riemann sum while max_init_sample isn't reached
-		init_g_b -= Vector3f(last_imu.xacc * dt , last_imu.yacc * dt , last_imu.zacc * dt) ;  
+		init_g_b += Vector3f(last_imu.xacc * dt , last_imu.yacc * dt , last_imu.zacc * dt) ;  
 		init_mag_b += Vector3f(last_imu.xmag * dt , last_imu.ymag * dt , last_imu.zmag * dt);
 		init_gyro_bias_b += Vector3f(last_imu.xgyro * dt , last_imu.ygyro * dt , last_imu.zgyro * dt);
 
@@ -88,9 +94,7 @@ void Estimator::update(){
 			init_g_b /= time_sec ;
 			init_mag_b /= time_sec;
 			init_gyro_bias_b /= time_sec;
-			float temp = init_mag_b(1);
-			init_mag_b(1) = -init_mag_b(0);
-			init_mag_b(0) = temp;
+
 			// Set lat and lon in radian
 			initgpslon /= (gpsDataCount); /// M_DEG_TO_RAD);
 			initgpslat /= (gpsDataCount); /// M_DEG_TO_RAD);
@@ -115,7 +119,23 @@ void Estimator::update(){
 
 	_x =  model_dynamic(dt);
 	predict(dt);
-	std::cout << "Delay = " << dt << std::endl;
+
+	if(_mag_timeout > mag_update_time){
+		Vector3f m_mag (last_imu.xmag ,  last_imu.ymag ,  last_imu.zmag);
+		yawCorrect(m_mag);
+		_mag_timeout = 0;
+	}
+
+	// if (a_next.norm() < 1e-1 && w_next.norm() < 1e-2) {
+	// 	Vector3f acc_mes(last_imu.xacc , last_imu.yacc , last_imu.zacc);
+	// 	imuCorrect(acc_mes);
+	// }
+
+	gps_data gps;
+	if ( xQueueReceive(_gpsQueueHandle , &gps , ( TickType_t ) 0 ) ){
+		gpsCorrect(&gps);
+	}
+	// std::cout << "Delay = " << dt << std::endl;
 
 }
 
@@ -147,10 +167,14 @@ void Estimator::initSystem(float currentTimeStamp){
 	_x(X_bwz) = init_gyro_bias_b(2);
 
 	// Initialize bias with the difference with default gravity (this assume the mobile not move and imu is not inclinated)
-	// Dcmf intiDcmf(q_init);
-	// _x(X_bwx) = init_gyro_bias_b(0) *;
-	// _x(X_bwy) = init_gyro_bias_b(1);
-	// _x(X_bwz) = init_gyro_bias_b(2);
+	Dcmf initDcmf(q_init);
+	Vector3f init_b_a  = init_g_b + initDcmf.transpose() * gravity; 
+	std::cout << initDcmf.transpose() * gravity << std::endl; 
+	_x(X_bax) = init_b_a(0);
+	_x(X_bay) = init_b_a(1);
+	_x(X_baz) = init_b_a(2);
+
+	_Rbn = Dcmf(Quatf(_x.data() + X_qw));
 	/**************************************************************/
 
 	/* Initialize covariance matrix error 						   */
@@ -208,18 +232,19 @@ Vector<float , n_X> Estimator::model_dynamic(float dt ){
 	Vector<float , n_X> nextX;
 	uint8_t i;
 
-	_Rbn = Dcmf(_x.data() + X_qw);
+	// _Rbn = Dcmf(Quatf(_x.data() + X_qw));
 
 	// Update gyro estimate with gyro input + biais
 	for(i= 0 ; i< 3 ; i++ ){
 		// nextX(i+X_wx) = (_u(U_wx+i) - _x(X_bwx+i)); // TODO : - ou pas ??
 		nextX(i+X_bwx) = (1.0f - dt*corr_time_gyro) * _x(X_bwx + i);
+		w_next(i) = (_u(U_wx+i) - _x(X_bwx+i));
 		_w_dt(i) = (_u(U_wx+i) - _x(X_bwx+i)) * dt;
 	}
 
 	// update accelero,position and velocity estimate with acc input + biais
 	_a_next = Vector3f(_u(U_ax)-_x(X_bax) , _u(U_ay)-_x(X_bay) , _u(U_az)-_x(X_baz)) ;
-	Vector3f a_next = _Rbn * _a_next + gravity;
+	a_next = _Rbn * _a_next + gravity;
 	for(i=0 ; i<3 ; i++){
 		// nextX(i+X_ax) = a_next(i);
 		nextX(i+X_bax) = (1.0f - dt*corr_time_acc) * _x(X_bax + i);
@@ -233,8 +258,13 @@ Vector<float , n_X> Estimator::model_dynamic(float dt ){
 	for(i=0; i<4 ; i++){
 		nextX(X_qw+i) = q_next(i);
 	}
-	std::cout << "New x : " << std::endl;
-	std::cout << nextX << std::endl;
+
+	_Rbn = Dcmf(Quatf(_x.data() + X_qw));
+	// std::cout << "New x : " << std::endl;
+	// std::cout << _x(X_x) << std::endl;
+	// std::cout << a_next << std::endl;
+	// std::cout << w_next << std::endl;
+	// std::cout << _x(X_x) << " , " << _x(X_y) << " , " << _x(X_z)  << std::endl;
 	return nextX;
 }
 
@@ -265,22 +295,28 @@ void Estimator::predict(float dt){
 	float angle = _w_dt.norm();
 	Quatf fq_wx, fq_wy,fq_wz;
 
-	if (abs(angle) > 1e-9f){
-		float cos_angle_2 = 0.5f * cos(angle/2.0f);
-		float sin_angle_2 = 0.5f * sin(angle/2.0f);
-		float sin_angle_2_angle = sin_angle_2/angle;
-		float sin_angle_angle_der = (cos_angle_2 - sin_angle_2_angle)/ (angle * angle);
+	if (abs(angle) > 1e-10f){
+		float u = cos(angle/2.0f);
+		float v = sin(angle/2.0f);
+		float v_angle = v/angle; // Only if the angle is not close to zero
+		float v_angle_der = (0.5f * u   - v_angle)/ (angle * angle);
 		//		Derivative in respect to wbx
-		float temp_der_wx = _w_dt(0) * sin_angle_angle_der; 
-		fq_wx = Quatf(- _w_dt(0) * sin_angle_2_angle , temp_der_wx * _w_dt(0) + 2*sin_angle_2_angle , temp_der_wx * _w_dt(1) , temp_der_wx * _w_dt(2) );
+		float temp_der_wx = dt * _w_dt(0) * v_angle_der; 
+		fq_wx = Quatf(-0.5f * dt * _w_dt(0) * v_angle, temp_der_wx * _w_dt(0) + v_angle*dt , temp_der_wx * _w_dt(1) , temp_der_wx * _w_dt(2) );
 
 		//		Derivative in respect to wby
-		float temp_der_wy = _w_dt(1) * sin_angle_angle_der; 
-		fq_wy = Quatf(- _w_dt(1) * sin_angle_2_angle , temp_der_wy * _w_dt(0) , temp_der_wy * _w_dt(1) + 2*sin_angle_2_angle, temp_der_wy * _w_dt(2) );
+		float temp_der_wy = dt * _w_dt(1) * v_angle_der; 
+		fq_wy = Quatf(-0.5f * dt * _w_dt(1) * v_angle , temp_der_wy * _w_dt(0) , temp_der_wy * _w_dt(1) + v_angle * dt , temp_der_wy * _w_dt(2) );
 
 		//		Derivative in respect to wby
-		float temp_der_wz = _w_dt(2) * sin_angle_angle_der; 
-		fq_wz = Quatf(- _w_dt(2) * sin_angle_2_angle , temp_der_wz * _w_dt(0) , temp_der_wz * _w_dt(1), temp_der_wz * _w_dt(2)+ 2*sin_angle_2_angle );
+		float temp_der_wz = dt * _w_dt(2) * v_angle_der; 
+		fq_wz = Quatf(-0.5f * dt * _w_dt(2) * v_angle , temp_der_wz * _w_dt(0) , temp_der_wz * _w_dt(1), temp_der_wz * _w_dt(2)+ v_angle*dt );
+	} else {
+		// First order approximation of the calculation on the non zero case mentionned above
+		fq_wx = Quatf(-0.25f * dt * _w_dt(0) , 0.5f * dt , 0.0 , 0.0);
+		fq_wx = Quatf(-0.25f * dt * _w_dt(1) , 0.0 , 0.5f * dt , 0.0);
+		fq_wy = Quatf(-0.25f * dt * _w_dt(2) , 0.0 , 0.0 , 0.5f * dt);
+		std::cout << "Null rotation vector " << std::endl;
 	}
 
 	Quatf current_quat(_x.data() + X_qw);
@@ -289,9 +325,9 @@ void Estimator::predict(float dt){
 	fq_wy = current_quat * fq_wy;
 	fq_wz = current_quat * fq_wz;
 	for (i=0 ; i< 4 ; i++){
-		_Fx(X_qw+i , X_bwx) = - fq_wx(i) * dt; // need dt because  q(R(wdt))
-		_Fx(X_qw+i , X_bwy) = - fq_wy(i) * dt;
-		_Fx(X_qw+i , X_bwz) = - fq_wz(i) * dt;
+		_Fx(X_qw+i , X_bwx) = - fq_wx(i);
+		_Fx(X_qw+i , X_bwy) = - fq_wy(i);
+		_Fx(X_qw+i , X_bwz) = - fq_wz(i);
 	}
 
 	// gyro bias , gyro bias
@@ -343,31 +379,203 @@ void Estimator::predict(float dt){
 
 	/* Update gradient of U */
 	// quaternion , gyroscope measurement
+	// for(i=0 ; i< 4 ; i++){
+	// 	_Fu(X_qw+i , U_wx) =  fq_wx(i); // need dt because  q(R(wdt))
+	// 	_Fu(X_qw+i , U_wy) =  fq_wy(i);
+	// 	_Fu(X_qw+i , U_wz) =  fq_wz(i);
+	// }
+	// // velocity , acc measurement --> position , acc measurement
+	// for(i=0 ; i< 3 ; i++){
+	// 	for(j=0 ; j<3 ; j++){
+	// 		_Fu(X_vx + i , U_ax + j) = _Rbn(i,j) * dt;
+	// 		_Fu(X_x + i , U_ax + j ) = _Fu(X_vx + i , U_ax + j) * 0.5 * dt;
+	// 	}
+	// }
+	// // bias , bias
+	// for(i=0 ; i<3 ; i++){
+	// 	_Fu(X_bwx + i , U_bwx + i) = 1.0f;
+	// 	_Fu(X_bax + i , U_bax + i) =  1.0f;
+	// }
 	for(i=0 ; i< 4 ; i++){
-		_Fu(X_qw+i , U_wx) =  fq_wx(i) * dt; // need dt because  q(R(wdt))
-		_Fu(X_qw+i , U_wy) =  fq_wy(i) * dt;
-		_Fu(X_qw+i , U_wz) =  fq_wz(i) * dt;
+		_Fu(X_qw+i , U_wx) =  1.0; // need dt because  q(R(wdt))
+		_Fu(X_qw+i , U_wy) =  1.0;
+		_Fu(X_qw+i , U_wz) =  1.0;
 	}
+	_Fu(X_qw , U_wx) = 0;
+	_Fu(X_qw , U_wy) = 0;
+	_Fu(X_qw , U_wz) = 0;
+	_Fu(X_qx , U_wx) = 0.5f;
+	_Fu(X_qx , U_wy) = 0;
+	_Fu(X_qx , U_wz) = 0;
+	_Fu(X_qy , U_wx) = 0;
+	_Fu(X_qy , U_wy) = 0.5f;
+	_Fu(X_qy , U_wz) = 0;
+	_Fu(X_qz , U_wx) = 0;
+	_Fu(X_qz , U_wy) = 0;
+	_Fu(X_qz , U_wz) = 0.5f;
 	// velocity , acc measurement --> position , acc measurement
 	for(i=0 ; i< 3 ; i++){
-		for(j=0 ; j<3 ; j++){
-			_Fu(X_vx + i , U_ax + j) = _Rbn(i,j) * dt;
-			_Fu(X_x + i , U_ax + j ) = _Fu(X_vx + i , U_ax + j) * 0.5 * dt;
-		}
+		_Fu(X_vx + i , U_ax + i) = 1.0f;
+		// _Fu(X_x + i , U_ax + i ) = 1.0f;
 	}
 	// bias , bias
 	for(i=0 ; i<3 ; i++){
 		_Fu(X_bwx + i , U_bwx + i) = 1.0f;
 		_Fu(X_bax + i , U_bax + i) =  1.0f;
 	}
-
+	for (uint8_t i =0 ; i< 3 ; i++){
+		_Q(U_wx + i , U_wx + i) = sigma_w * sigma_w * dt * dt;
+		_Q(U_bwx + i ,  U_bwx + i ) = sigma_bw * sigma_bw * dt;
+		_Q(U_ax + i , U_ax + i) = sigma_a * sigma_a * dt * dt;
+		_Q(U_bax + i ,  U_bax + i ) = sigma_ba * sigma_ba * dt;
+	}
 	// Update error coviarance matrix
 	_P = _Fx * _P * _Fx.transpose() + _Fu * _Q * _Fu.transpose();
 
-	// std::cout << "Fx print : " << std::endl;
-	// std::cout << _Fx << std::endl;
-	// std::cout << "Fu print : " << std::endl;
-	// std::cout << _Fu << std::endl;
+	if (abs(_x(X_x)) >0.1){
+		// std::cout << "Diag : ";
+		// for (i=0 ; i< n_X ; i++){
+		// 	std::cout << _Fx(i,i) << " ; ";
+		// }
+		// std::cout << std::endl;
+		// std::cout << "Fx print : " << std::endl;
+		// std::cout << _Fx << std::endl;
+		// std::cout << "Fu print : " << std::endl;
+		// std::cout << _Fu << std::endl;
+		// std::cout << "P print :" << std::endl;
+		// std::cout << _P << std::endl;
+	}
+}
+
+void Estimator::gpsCorrect(const gps_data *m_pos){
+	/* Update position from position measurement */
+	float x , y ;
+	float z = (m_pos->alt * 1e-3) - initgpsalt;
+
+	// project(m_pos->lat * 1e-7 ,m_pos->lon * 1e-7, &x , &y);
+	project(m_pos->lat * 1e-7 ,m_pos->lon * 1e-7, &y , &x); // Because ENU coordinate system
+	// h jacobian matrix
+
+	estimate_position estimPos;
+	estimPos = {0};
+	estimPos.x = x;
+	estimPos.y = y;
+	estimPos.z = z;
+	xQueueOverwrite(_estimQueue, (void * ) &estimPos);
+	// std::cout << estimPos.x << estimPos.y << estimPos.z << std::endl;
+
+	Matrix<float,3, n_X> jacob_h;
+	jacob_h.setZero();
+	jacob_h(0, X_x) = 1.0;
+	jacob_h(1, X_y) = 1.0;
+	jacob_h(2, X_z) = 1.0;
+	Matrix<float , n_X , 3> jacob_h_transpose = jacob_h.transpose();
+
+	// R measurement noise error
+	SquareMatrix<float,3> R;
+	R.setZero();
+	R(0,0) = sigma_gps_x * sigma_gps_x;
+	R(1,1) = sigma_gps_y * sigma_gps_y;
+	R(2,2) = sigma_gps_z * sigma_gps_z;
+
+	Matrix3f innov_cov = jacob_h * _P * jacob_h_transpose + R;
+	Matrix<float , n_X , 3> kalman_gain = _P * jacob_h_transpose * inv(innov_cov);
+
+
+	Vector3f innov( x - _x(X_x) , y - _x(X_y) , z - _x(X_z) );
+	// std::cout << " Innov x,y,z : " << std::endl;
+	// std::cout << innov << std::endl;
+	// std:: cout << x << " , " << y << " , " << z << std::endl;
+	// std::cout << kalman_gain * innov << std::endl;
+
+	// std::cout << _x(X_x) << " , " << _x(X_y) << " , " << _x(X_z)  << std::endl;
+	_x += kalman_gain * innov;
+	_P -= kalman_gain * innov_cov * kalman_gain.transpose();
+	_Rbn = Dcmf(Quatf(_x.data() + X_qw));
+	// std:: cout << x << " , " << y << " , " << z << std::endl;
+	std::cout << _x(X_x) << " , " << _x(X_y) << " , " << _x(X_z)  << std::endl;
+	std::cout << "Diag : ";
+	for (uint8_t i=0 ; i< n_X ; i++){
+		std::cout << _P(i,i) << " ; ";
+	}
+	std::cout << std::endl;
+	//std::cout << Eulerf(_Rbn) << std::endl;
+}
+
+void Estimator::yawCorrect(const matrix::Vector3f &mag_data){
+	float num_atan = 2*(_x(X_qx)*_x(X_qy) - _x(X_qw)*_x(X_qz));
+	float denom_atan = 1.0f - 2*(_x(X_qy)*_x(X_qy) + _x(X_qz)*_x(X_qz));
+	float atan_der_term = 1.0f / (1.0f + ((num_atan * num_atan) /(denom_atan * denom_atan)));
+	
+	Matrix<float , 1 , n_X> jacob_h_yaw;
+	jacob_h_yaw.setZero();
+	jacob_h_yaw(0, X_qw) = (-2 * _x(X_qz) / denom_atan) * atan_der_term;
+	jacob_h_yaw(0, X_qx) = (2 * _x(X_qy) / denom_atan ) * atan_der_term;
+	jacob_h_yaw(0, X_qy) = ((2*_x(X_qx)*denom_atan - (-4 * _x(X_qy))*num_atan)/(denom_atan * denom_atan))* atan_der_term;
+	jacob_h_yaw(0, X_qz) = ((-2*_x(X_qw)*denom_atan - (-4 * _x(X_qz))*num_atan)/(denom_atan * denom_atan))* atan_der_term;
+
+	Vector3f mag_data_n = _Rbn * mag_data;
+	mag_data_n(2) = 0.0;
+	mag_data_n =  _Rbn.transpose() * mag_data_n;
+
+	float yaw_mag = atan2(-mag_data_n(1) , mag_data_n(0));
+	float yaw_est = atan2(num_atan, denom_atan);
+	float yaw_innov =  yaw_mag - yaw_est;
+	float innov_cov_yaw =  (jacob_h_yaw * _P * jacob_h_yaw.transpose())(0,0) + sigma_mag * sigma_mag;
+	Matrix<float , n_X , 1> kalman_gain_yaw = (_P * jacob_h_yaw.transpose()) / innov_cov_yaw;
+	// std::cout << " Innov yaw : " << std::endl;
+	// std::cout << yaw_innov << std::endl;
+	// std::cout << Eulerf(_Rbn) << std::endl;
+	// std::cout << kalman_gain_yaw * yaw_innov << std::endl;
+	// if (denom_atan < 0.1 ){	
+	// 	std::cout << "denom_atan " << denom_atan << std::endl;
+	// 	std::cout << jacob_h_yaw << std::endl;
+	// }
+	// if (innov_cov_yaw < 0.01)
+	// 	std::cout << "innov cov " << innov_cov_yaw << std::endl;
+	// std::cout << _x(X_x) << " , " << _x(X_y) << " , " << _x(X_z)  << std::endl;
+	_x += kalman_gain_yaw * yaw_innov;
+	_P -= kalman_gain_yaw * (innov_cov_yaw * kalman_gain_yaw.transpose());
+	_Rbn = Dcmf(Quatf(_x.data() + X_qw));
+	// std::cout << _x(X_x) << " , " << _x(X_y) << " , " << _x(X_z)  << std::endl;
+}
+
+void Estimator::imuCorrect(const matrix::Vector3f &acc_data){
+	Vector3f gravity_est = _Rbn.transpose() * (-gravity) + Vector3f(_x.data() + X_bax);
+	Vector3f innov = acc_data - gravity_est;
+
+	SquareMatrix<float, 3> R;
+	R.setZero();
+	R(0,0) = sigma_a;
+	R(1,1) = sigma_a; 
+	R(2,2) = sigma_a;  
+
+	Matrix<float, 3 , n_X> jacob_h;
+	jacob_h.setZero();
+	float data_q0[9] = {_x(X_qw) , -_x(X_qz) , _x(X_qy) , _x(X_qz) , _x(X_qw) , -_x(X_qx) , -_x(X_qy) , _x(X_qx) , _x(X_qw)};
+	float data_q1[9] = {_x(X_qx) , _x(X_qy) , _x(X_qz) , _x(X_qy) , -_x(X_qx) , -_x(X_qw) , _x(X_qz) , _x(X_qw) , -_x(X_qx)};
+	float data_q2[9] = {-_x(X_qy) , _x(X_qx) , _x(X_qw) , _x(X_qx) , _x(X_qy) , _x(X_qz) , -_x(X_qw) , _x(X_qz) , -_x(X_qy)};
+	float data_q3[9] = {-_x(X_qz) , -_x(X_qw) , _x(X_qx) , _x(X_qw) , -_x(X_qz) , _x(X_qy) , _x(X_qx) , _x(X_qy) , _x(X_qw)};
+
+	Vector3f temp1 = Matrix3f(data_q0).transpose() * (gravity_est );
+	Vector3f temp2 = Matrix3f(data_q1).transpose() * (gravity_est );
+	Vector3f temp3 = Matrix3f(data_q2).transpose() * (gravity_est );
+	Vector3f temp4 = Matrix3f(data_q3).transpose() * (gravity_est );
+	for(uint8_t i=0; i<3 ; i++){
+		jacob_h(i , X_qw) =  2* temp1(i);
+		jacob_h(i , X_qx) =  2* temp2(i);
+		jacob_h(i , X_qy) =  2* temp3(i);
+		jacob_h(i , X_qz) =  2* temp4(i);
+	}
+	Matrix3f innov_cov = jacob_h * _P * jacob_h.transpose() + R;
+	Matrix<float , n_X , 3> kalman_gain = _P * jacob_h.transpose() * inv(innov_cov);
+	_x += kalman_gain * innov;
+	_P -= kalman_gain *  innov_cov * kalman_gain.transpose();
+	_Rbn = Dcmf(Quatf(_x.data() + X_qw));
+	// std::cout << "Innov pitch roll" << std::endl;
+	// std::cout << innov << std::endl;
+
+	// std::cout << _x(X_x) << " , " << _x(X_y) << " , " << _x(X_z)  << std::endl;
 }
 
 void Estimator::project(double lat , double lon , float *x , float *y){

@@ -1,11 +1,22 @@
 #include "aigle.h"
 
+#define X_MIN -36
+#define Y_MIN -36
+#define X_MAX 36
+#define Y_MAX 36
+
 int main(void ){
+	topology m_limit ={0};
+	m_limit.x_min = X_MIN;
+	m_limit.x_max = X_MAX;
+	m_limit.y_min = Y_MIN;
+	m_limit.y_max = Y_MAX;
 
 	// Create queue for message exchange between some tasks
 	QueueHandle_t gpsQueueHandle, imuQueueHandle, estQueueHandle;
 	gpsQueueHandle = xQueueCreate(1 , sizeof (gps_data));
 	imuQueueHandle = xQueueCreate(1 , sizeof (imu_data));
+	estQueueHandle = xQueueCreate(1 , sizeof (estimate_position));
 
 	// Check if creattion was done
 	if (gpsQueueHandle == NULL){
@@ -16,6 +27,10 @@ int main(void ){
 		printf("[AIGLE] Could not create imu queue \n");
 		return 0;
 	}
+	if(estQueueHandle == NULL){
+		printf("[AIGLE] Could not create estimpos queue \n");
+		return 0;
+	}
 
 	// Initialize aigle io interface with default port and queues elements
 	IoAigleInterface aigle_io;
@@ -24,11 +39,14 @@ int main(void ){
 
 	// Initialize strategy class with aigle_io instance and queues elements
 	Strategy strategy(&aigle_io);
+	strategy.setTopology(m_limit);
+	strategy.setEstimatePosQueue(estQueueHandle);
 
 	// Initialize estimator class 
 	Estimator estimator;
 	estimator.setGPSQueue(gpsQueueHandle);
 	estimator.setIMUQueue(imuQueueHandle);
+	estimator.setEstimatePosQueue(estQueueHandle);
 
 	/* Tasks creation */
 	BaseType_t status;
