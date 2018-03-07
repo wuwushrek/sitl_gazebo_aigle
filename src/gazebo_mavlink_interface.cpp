@@ -641,6 +641,7 @@ void GazeboMavlinkInterface::ImuCallback(ImuPtr& imu_message) {
   //gzerr << "got imu: " << C_W_I << "\n";
   //gzerr << "got pose: " << T_W_I.rot << "\n";
   float declination = get_mag_declination(groundtruth_lat_rad, groundtruth_lon_rad);
+  // gzerr << "Declination : " << declination << std::endl;
 
   math::Quaternion q_dn(0.0, 0.0, declination);
   math::Vector3 mag_n = q_dn.RotateVector(mag_d_);
@@ -663,6 +664,9 @@ void GazeboMavlinkInterface::ImuCallback(ImuPtr& imu_message) {
         imu_message->angular_velocity().y(),
         imu_message->angular_velocity().z()));
   math::Vector3 mag_b = q_nb.RotateVectorReverse(mag_n) + mag_noise_b;
+  //gzerr << "yaw mag : " << atan2(-mag_b.y, mag_b.x )<< std::endl;
+
+  // gzerr << "yaw mag : " << (math::Vector3) (q_gb*q_nb.GetInverse()).RotateVector(mag_n) << std::endl;
 
   mavlink_hil_sensor_t sensor_msg;
   sensor_msg.time_usec = world_->GetSimTime().Double() * 1e6;
@@ -675,7 +679,7 @@ void GazeboMavlinkInterface::ImuCallback(ImuPtr& imu_message) {
   sensor_msg.xmag = mag_b.x;
   sensor_msg.ymag = mag_b.y;
   sensor_msg.zmag = mag_b.z;
-  gzmsg << model_->GetWorldPose() << std::endl;;
+  // gzmsg << model_->GetWorldPose() << std::endl;;
 
   // calculate abs_pressure using an ISA model for the tropsphere (valid up to 11km above MSL)
   const float lapse_rate = 0.0065f;  // reduction in temperature with altitude (Kelvin/m)
