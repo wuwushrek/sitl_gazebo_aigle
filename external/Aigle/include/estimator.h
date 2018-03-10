@@ -50,6 +50,7 @@
 #define X_bay  14
 #define X_baz  15
 #define n_X  16
+// #define n_X 7
 
 // Constants for Inputs variable
 #define U_wx  0
