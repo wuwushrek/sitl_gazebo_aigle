@@ -1,5 +1,7 @@
-#ifndef IO_AIGLE_SITL
-#define IO_AIGLE_SITL
+#ifndef __IO_AIGLE_SITL_H__
+#define __IO_AIGLE_SITL_H__
+
+#include "AigleIoInterface.h"
 
 #include <iostream>
 #include <stdio.h>
@@ -13,12 +15,6 @@
 #include <unistd.h>
 
 #include <mavlink/v2.0/common/mavlink.h>
-// #include <gazebo/common/common.hh>
-
-#include "aigle_types.h"
-
-#include "FreeRTOS.h"
-#include "queue.h"
 
 #define ITERATION_GPS 100
 #define ITERATION_IMU 10
@@ -26,34 +22,36 @@
 #define DEFAULT_AIGLE_UDP_PORT 14570
 #define SOCKET_NAME "/tmp/share_fd_gazebo_aigle.socket"
 
-class IoAigleInterface{
+class AigleIoInterfaceSITL : public AigleIoInterface{
 
 public:
 	
 	uint8_t succeed_init;
 	
-	IoAigleInterface();
-	IoAigleInterface(int port_to_gazebo);
+	AigleIoInterfaceSITL();
+	AigleIoInterfaceSITL(int port_to_gazebo);
 
-	void readIMU();
-	void readGPS();
+	virtual void readIMU();
+	virtual void readGPS();
 
-	void transferMotorsValue();
-	void writeMotors(const motor_data *motor_vals);
-
-	// utility function just for simulation
-	void collectSensorsData();
+	virtual void transferMotorsValue();
+	virtual void writeMotors(const MotorData *motor_vals);
+	virtual void stopMotors();
 
 	// Queue for IMU and GPS data values
-	void setGPSQueue(QueueHandle_t gpsQueueHandle);
-	void setIMUQueue(QueueHandle_t imuQueueHandle);
+	virtual void setGPSQueue(QueueHandle_t gpsQueueHandle);
+	virtual void setIMUQueue(QueueHandle_t imuQueueHandle);
+	virtual void setSystemStatusQueue(QueueHandle_t ssQueueHandle);
 
-	~IoAigleInterface();
+	// utility function just for simulation
+	virtual void collectSensorsData();
+
+	~AigleIoInterfaceSITL();
 
 private:
 
-	const static uint32_t pwm_max_value =  2000;
-	const static uint32_t pwm_min_value = 1000;
+	//const static uint32_t pwm_max_value =  2000;
+	//const static uint32_t pwm_min_value = 1000;
 
 	// following MAVLink spec data
 	const static unsigned int mode_flag_armed = 128;
@@ -61,11 +59,12 @@ private:
 
 	// motor value update flag
 	bool motors_updated;
+	uint64_t lastTimeMotors;
 
 	// Simulated sensor values
-	motor_data received_motors_values_;
-	gps_data gps_pos_vel_;
-	imu_data imu_raw_;
+	MotorData received_motors_values_;
+	GpsData gps_pos_vel_;
+	ImuData imu_raw_;
 
 	// Queue for GPS and IMU outcome values
 	QueueHandle_t gpsQueueHandle_;
@@ -97,4 +96,4 @@ private:
 	int do_useless_calculation(uint32_t seq);
 };
 
-#endif
+#endif // __IO_AIGLE_SITL_H__

@@ -77,9 +77,17 @@ include_directories(${Aigle_INCLUDE_DIRS})
 
 set(SRCS
   src/aigle.cpp
-	src/io_aigle_sitl.cpp
-	src/strategy.cpp
-  src/estimator.cpp
+	src/AigleIoInterfaceSITL.cpp
+	src/StrategyManager.cpp
+  src/Estimator.cpp
+  src/RectangleArea.cpp
+  src/OutOfZoneFault.cpp
+  src/InsideSoftZoneCorrector.cpp
+  src/InsideHardZoneCorrector.cpp
+  src/LowBatteryFault.cpp
+  src/NoMotorCommandFault.cpp
+  src/NoMotorLowBatteryCorrector.cpp
+  src/StrategyDecisionMaker.cpp
   ${FREERTOS_SRCS}
 )
 

@@ -252,6 +252,7 @@ add_library(rotors_gazebo_mavlink_interface SHARED src/gazebo_mavlink_interface.
 add_library(gazebo_sonar_plugin SHARED src/gazebo_sonar_plugin.cpp)
 add_library(gazebo_uuv_plugin SHARED src/gazebo_uuv_plugin.cpp)
 add_library(gazebo_gps_plugin SHARED src/gazebo_gps_plugin.cpp)
+add_library(gazebo_clean_gps_plugin SHARED src/gazebo_clean_gps_plugin.cpp)
 
 add_library(gazebo_aigle_plugin SHARED src/gazebo_mavlink_aigle_interface.cpp)
 # target_link_libraries(gazebo_aigle_plugin ${Aigle_LIBS})
@@ -270,6 +271,7 @@ set(plugins
   gazebo_sonar_plugin
   gazebo_uuv_plugin
   gazebo_gps_plugin
+  gazebo_clean_gps_plugin
   )
 
 # ROS mavlink version not compatible with geotagged images plugin

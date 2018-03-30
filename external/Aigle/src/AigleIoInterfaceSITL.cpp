@@ -1,25 +1,27 @@
-#include "io_aigle_sitl.h"
+#include "AigleIoInterfaceSITL.h"
 
 int receive_fd();
 
 /*
 * Empty constructor for IoAigleInterface
 */
-IoAigleInterface::IoAigleInterface(){
+AigleIoInterfaceSITL::AigleIoInterfaceSITL(){
 	motors_updated = false;
+	lastTimeMotors = 0;
 	initializeIoInterface(DEFAULT_AIGLE_UDP_PORT);
 	imu_raw_.time_usec =  0;
 	gps_pos_vel_.time_usec = 0;
 }
 
-IoAigleInterface::IoAigleInterface(int port_to_gazebo){
+AigleIoInterfaceSITL::AigleIoInterfaceSITL(int port_to_gazebo){
 	motors_updated = false;
+	lastTimeMotors = 0;
 	initializeIoInterface(port_to_gazebo);
 	imu_raw_.time_usec =  0;
 	gps_pos_vel_.time_usec = 0;
 }
 
-IoAigleInterface::~IoAigleInterface(){
+AigleIoInterfaceSITL::~AigleIoInterfaceSITL(){
 	close(fd_motors_recv_);
 	close(fd_motors_send_);
 	std::cout << "[AIGLE] Destruction of IoAigleInterface reference" << std::endl;
@@ -34,40 +36,55 @@ IoAigleInterface::~IoAigleInterface(){
 /*
 * Set the QUEUE for GPS datas
 */
-void IoAigleInterface::setGPSQueue(QueueHandle_t gpsQueueHandle){
+void AigleIoInterfaceSITL::setGPSQueue(QueueHandle_t gpsQueueHandle){
 	gpsQueueHandle_ =  gpsQueueHandle;
 }
 
 /*
 * Set the QUEUE for IMU datas
 */
-void IoAigleInterface::setIMUQueue(QueueHandle_t imuQueueHandle){
+void AigleIoInterfaceSITL::setIMUQueue(QueueHandle_t imuQueueHandle){
 	imuQueueHandle_ = imuQueueHandle;
 }
 
+
+void AigleIoInterfaceSITL::setSystemStatusQueue(QueueHandle_t ssQueueHandle){
+	ssQueueHandle_ = ssQueueHandle;
+}
 /*
 * Update data from GPS sensors 
 */
-void IoAigleInterface::readGPS(){
+void AigleIoInterfaceSITL::readGPS(){
 	do_useless_calculation(ITERATION_GPS);
 }
 
 /*
 * Update data from IMU sensors 
 */
-void IoAigleInterface::readIMU(){
+void AigleIoInterfaceSITL::readIMU(){
 	do_useless_calculation(ITERATION_IMU);
 }
 
+void AigleIoInterfaceSITL::stopMotors(){
+	MotorData send_motor;
+	send_motor.is_armed = 0;
+	for (unsigned int i =0; i< n_out_max ; i++){
+		send_motor.motor_values[i] = 0.0;
+	}
+	writeMotors(&send_motor);
+}
 /*
 * Output PWM motors values
 */
-void IoAigleInterface::writeMotors(const motor_data *motors_values){
+void AigleIoInterfaceSITL::writeMotors(const MotorData *motors_values){
 	mavlink_hil_actuator_controls_t controls = {};
 	mavlink_message_t message = {};
 	for (unsigned int i =0; i<n_out_max ; i++){
-		controls.controls[i] = ((motors_values->motor_values[i] - pwm_min_value)*2.0/(pwm_max_value- pwm_min_value)) - 1.0;
+		controls.controls[i] = motors_values->motor_values[i];
+		//std::cout << (int) controls.controls[i] << " ; ";
+		// controls.controls[i] = ((motors_values->motor_values[i] - pwm_min_value)*2.0/(pwm_max_value- pwm_min_value)) - 1.0;
 	}
+	//std::cout << std::endl;
 	controls.mode = mode_flag_custom;
 	controls.mode |= (motors_values->is_armed == 1) ? mode_flag_armed : 0;
 	controls.flags = 0;
@@ -80,12 +97,12 @@ void IoAigleInterface::writeMotors(const motor_data *motors_values){
 /*
 * Simple function to directly retransmit current motors output
 */
-void IoAigleInterface::transferMotorsValue(){
+void AigleIoInterfaceSITL::transferMotorsValue(){
 	if ( ! motors_updated){
 		return ;
 	}
 	// Copy in order to avoid synchronization issue
-	motor_data send_motor = received_motors_values_;
+	MotorData send_motor = received_motors_values_;
 
 	// Write to the gazebo plugin
 	writeMotors(&send_motor);
@@ -94,7 +111,7 @@ void IoAigleInterface::transferMotorsValue(){
 /*
 * Collect in a thread safe way gps , IMU and motors values via various udp socket
 */
-void IoAigleInterface::collectSensorsData(){
+void AigleIoInterfaceSITL::collectSensorsData(){
 	// Collect data from PX4 (motors output)
 	checkReceivedData(0, NULL , NULL);
 	// Collect data from aigle plugin in gazebo (simulated sensors)
@@ -102,7 +119,7 @@ void IoAigleInterface::collectSensorsData(){
 }
 
 /* Initialize fd for motors output and fd for sensours input from Simulator */
-void IoAigleInterface::initializeIoInterface(int port_to_gazebo){
+void AigleIoInterfaceSITL::initializeIoInterface(int port_to_gazebo){
 	// Constructor doesn't failed to initalize
 	succeed_init = 1;
 
@@ -126,7 +143,7 @@ void IoAigleInterface::initializeIoInterface(int port_to_gazebo){
 	// Initialize motors as disarmed
 	received_motors_values_.is_armed = 0;
 	for (unsigned int i =0; i< n_out_max ; i++){
-		received_motors_values_.motor_values[i] = pwm_min_value;
+		received_motors_values_.motor_values[i] = 0.0;
 	}
 }
 
@@ -135,7 +152,7 @@ void IoAigleInterface::initializeIoInterface(int port_to_gazebo){
 * 	sockets associated with that port + binding + definition of the address of
 *	destination
 */
-void IoAigleInterface::init_io_interface(int port_to_gazebo){
+void AigleIoInterfaceSITL::init_io_interface(int port_to_gazebo){
 
 	//Copy the port 
 	port_to_gazebo_ = port_to_gazebo;
@@ -170,7 +187,7 @@ void IoAigleInterface::init_io_interface(int port_to_gazebo){
 	std::cout << "[AIGLE] socket fd_motors_send_ created ! " << std::endl;
 }
 
-int IoAigleInterface::do_useless_calculation(uint32_t max_count){
+int AigleIoInterfaceSITL::do_useless_calculation(uint32_t max_count){
 	int res = 0;
 	for (uint32_t i = 0; i< max_count ; i++){
 		for(uint32_t j =0; j< max_count ; j++){
@@ -183,7 +200,7 @@ int IoAigleInterface::do_useless_calculation(uint32_t max_count){
 /*
 * Routine to send a mavlink message over UDP
 */
-void IoAigleInterface::send_mavlink_message(const mavlink_message_t *message){
+void AigleIoInterfaceSITL::send_mavlink_message(const mavlink_message_t *message){
   uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
   int packetlen = mavlink_msg_to_send_buffer(buffer, message);
   ssize_t len = sendto(fd_motors_send_, buffer, packetlen, 0, (struct sockaddr *) &srcaddr_, sizeof(srcaddr_));
@@ -252,10 +269,12 @@ int receive_fd(){
 	return result;
 }
 
-void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *destaddr, socklen_t *destaddrlen){
+void AigleIoInterfaceSITL::checkReceivedData(uint8_t index, struct sockaddr_in *destaddr, socklen_t *destaddrlen){
 	::poll(&fds[index], (sizeof(fds[index]) /sizeof(fds[index])), 0);
 	uint8_t updateGPS = 0;
 	uint8_t updateIMU = 0;
+	uint8_t updateBat = 0;
+	uint8_t levelBattery;
 	if (fds[index].revents & POLLIN){
 		int len;
 		if ( (len = recvfrom(fds[index].fd , buf_, sizeof(buf_), 0, (struct sockaddr *) destaddr, destaddrlen)) < 0){
@@ -273,10 +292,12 @@ void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *dest
 					received_motors_values_.is_armed = ((controls.mode  & MAV_MODE_FLAG_SAFETY_ARMED) > 0) ? 1 : 0;
 					// std::cout << received_motors_values_.is_armed << " , ";
 					for (unsigned int j =0; j<n_out_max ; j++){
-						received_motors_values_.motor_values[j] = ((uint32_t) ((controls.controls[j] + 1.0)*(pwm_max_value - pwm_min_value)/2.0)) + pwm_min_value;
+						//received_motors_values_.motor_values[j] = ((uint32_t) ((controls.controls[j] + 1.0)*(pwm_max_value - pwm_min_value)/2.0)) + pwm_min_value;
+						received_motors_values_.motor_values[j] = controls.controls[j];
 						// std::cout << received_motors_values_.motor_values[j] << " , ";
 					}
 					motors_updated = true;
+					lastTimeMotors = xTaskGetTickCount() * portTICK_PERIOD_MS;
 					// std::cout << std::endl;
 				} else if (msg.msgid == MAVLINK_MSG_ID_HIL_SENSOR) {
 					updateIMU = 1;
@@ -315,6 +336,9 @@ void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *dest
 					gps_pos_vel_.cog = gps.cog;
 					gps_pos_vel_.fix_type = gps.fix_type;
 					gps_pos_vel_.satellites_visible = gps.satellites_visible;
+				}else if (msg.msgid == MAVLINK_MSG_ID_BATTERY_STATUS){
+					updateBat = 1;
+					levelBattery = mavlink_msg_battery_status_get_battery_remaining(&msg);
 				}
 			}
 		}
@@ -324,5 +348,11 @@ void IoAigleInterface::checkReceivedData(uint8_t index, struct sockaddr_in *dest
 	}
 	if (updateIMU == 1){
 		xQueueOverwrite(imuQueueHandle_, (void * ) &imu_raw_);
+	}
+	if(updateBat == 1){
+		SystemStatus ss;
+		ss.battery_level = levelBattery;
+		ss.last_time_motors = lastTimeMotors;
+		xQueueOverwrite(ssQueueHandle_ , (void *) &ss);
 	}
 }

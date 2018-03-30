@@ -84,15 +84,16 @@
       <parent>base_carte</parent>
     </joint>
 
-    <plugin name='gps_aigle_plugin' filename='libgazebo_gps_plugin.so'>
+    <plugin name='gps_aigle_plugin' filename='libgazebo_clean_gps_plugin.so'>
       <robotNamespace/>
-      <gpsNoise>true</gpsNoise>
+      <gpsNoise>false</gpsNoise>
     </plugin>
 
     <plugin name='mavlink_aigle_interface' filename='libgazebo_aigle_plugin.so'>
       <robotNamespace/>
       <gpsSubTopic>/gps</gpsSubTopic>
       <imuSubTopic>/imu</imuSubTopic>
+      <battery_time>1000</battery_time>
       <mavlink_aigle_udp_port>14570</mavlink_aigle_udp_port>
     </plugin>
 

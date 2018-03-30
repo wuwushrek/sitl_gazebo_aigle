@@ -1,26 +1,25 @@
-#ifndef AIGLE_H
-#define AIGLE_H
+#ifndef __AIGLE_H__
+#define __AIGLE_H__
 
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
-#include <iostream>
 
 #ifdef AIGLE_SITL_MODE
-	#include "io_aigle_sitl.h"
+	#include "AigleIoInterfaceSITL.h"
 #else
-	#include "io_aigle.h"
+	#include "AigleIoInterfaceReal.h"
 #endif
 
-#include "strategy.h"
-#include "estimator.h"
+#include "StrategyManager.h"
+#include "Estimator.h"
 
 /* Deadlines are in millisecond */
 #ifdef AIGLE_SITL_MODE
-	#define SENSORS_DEADLINE 	5UL
-	#define IMU_DEADLINE 		5UL
+	#define SENSORS_DEADLINE 	10UL
+	#define IMU_DEADLINE 		10UL
 	#define GPS_DEADLINE 		200UL
-	#define STRAT_DEADLINE		5UL
+	#define STRAT_DEADLINE		10UL
 #else
 	#define IMU_DEADLINE 		8UL
 	#define GPS_DEADLINE 		100UL
@@ -89,4 +88,4 @@ void task_ekf_estimator(void* estimator);
 void task_collectSensorsData(void* aigle_instance);
 #endif
 
-#endif //AIGLE_H
+#endif //__AIGLE_H__

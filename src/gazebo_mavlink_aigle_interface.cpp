@@ -45,6 +45,12 @@ void GazeboMavlinkAigleInterface::Load(physics::ModelPtr _model, sdf::ElementPtr
     aigle_port = _sdf->GetElement("mavlink_aigle_udp_port")->Get<int>();
   }
 
+  if(_sdf->HasElement("battery_time")){
+    battery_total_time = _sdf->GetElement("battery_time")->Get<int>();
+  }else{
+    battery_total_time = -1;
+  }
+  init_time = world_->GetSimTime();
   // Initialize aigle destination address
   memset( (char * )&srcaddr_ , 0 , sizeof(srcaddr_));
   srcaddr_.sin_family = AF_INET;
@@ -104,8 +110,10 @@ void GazeboMavlinkAigleInterface::GpsCallback(GpsPtr& gps_msg){
 	m_gps_position.ve = gps_msg->velocity_east() * 100.0;
 	m_gps_position.vd = -gps_msg->velocity_up() * 100.0;
 	// MAVLINK_HIL_GPS_T CoG is [0, 360]. math::Angle::Normalize() is [-pi, pi].
-	math::Angle cog(atan2(gps_msg->velocity_east(), gps_msg->velocity_north()));
-	cog.Normalize();
+	//math::Angle cog(atan2(gps_msg->velocity_east(), gps_msg->velocity_north()));
+	math::Quaternion quat = model_->GetWorldPose().rot;
+  math::Angle cog(quat.GetYaw());
+  //cog.Normalize();
 	m_gps_position.cog = static_cast<uint16_t>(GetDegrees360(cog) * 100.0);
 	m_gps_position.satellites_visible = 10;
 
@@ -113,7 +121,7 @@ void GazeboMavlinkAigleInterface::GpsCallback(GpsPtr& gps_msg){
   mavlink_message_t msg;
   mavlink_msg_hil_gps_encode_chan(1, 200, MAVLINK_COMM_0, &msg, &m_gps_position);
   send_mavlink_message(&msg);
-
+  //gzmsg << gps_msg->latitude_deg() << std::endl;
 	//Update aigle_io GPS position
 	// aigle_io.updateGPS(&m_gps_position);
 }
@@ -179,6 +187,12 @@ void GazeboMavlinkAigleInterface::ImuCallback(ImuPtr& imu_message) {
   sensor_msg.ymag = mag_r.y;
   sensor_msg.zmag = mag_r.z;
 
+  common::Time current_time = world_->GetSimTime();
+  current_battery = (battery_total_time == -1)? 100 : 100 - (int8_t) (((current_time - init_time).Double()/battery_total_time)*100);
+  current_battery = current_battery>=0 ? current_battery : 0;
+  mavlink_battery_status_t bat_msg;
+  bat_msg.battery_remaining = current_battery;
+
   // calculate abs_pressure using an ISA model for the tropsphere (valid up to 11km above MSL)
   const float lapse_rate = 0.0065f;  // reduction in temperature with altitude (Kelvin/m)
   const float temperature_msl = 288.0f;  // temperature at MSL (Kelvin)
@@ -225,8 +239,11 @@ void GazeboMavlinkAigleInterface::ImuCallback(ImuPtr& imu_message) {
   mavlink_message_t msg;
   mavlink_msg_hil_sensor_encode_chan(1, 200, MAVLINK_COMM_0, &msg, &sensor_msg);
   send_mavlink_message(&msg);
-  // aigle_io.updateIMU(&sensor_msg);
 
+  mavlink_msg_battery_status_encode_chan(1, 200, MAVLINK_COMM_0, &msg, &bat_msg);
+  send_mavlink_message(&msg);
+  //gzmsg << ((current_time - init_time).Double()/battery_total_time)*100 << std::endl;
+  // aigle_io.updateIMU(&sensor_msg);
 }
 
 void GazeboMavlinkAigleInterface::send_mavlink_message(const mavlink_message_t *message)

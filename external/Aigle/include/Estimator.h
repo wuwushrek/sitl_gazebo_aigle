@@ -12,7 +12,7 @@
 #include <string>
 #include <float.h>
 
-#include "aigle_types.h"
+#include "AigleTypes.h"
 
 #include "matrix/math.hpp"
 
@@ -77,29 +77,57 @@
 
 const matrix::Vector3f gravity(0.0 , 0.0 , -one_g);
 
+typedef matrix::SquareMatrix<float , 4> Matrix4f;
+typedef matrix::Matrix<float , 3 , 4> Matrix34f;
+
+matrix::Matrix<float , 4 , 3> euler2QuatJacobian(float roll , float pitch , float yaw);
+
+
+matrix::Matrix3f skew_symmetric(const matrix::Vector3f &v);
+
+//diff_(p*q) /diff_q
+Matrix4f diff_pq_q(const matrix::Quatf &p);
+
+//diff_(p*q)/ diff_p
+Matrix4f diff_pq_p(const matrix::Quatf &q);
+
+//diff_(q*v*q_star)/ diff_q
+Matrix34f diff_qvqstar_q(const matrix::Quatf &q, const matrix::Vector3f &v);
+
+//diff_(qstar*v*q)/ diff_q
+Matrix34f diff_qstarvq_q(const matrix::Quatf &q, const matrix::Vector3f &v);
+
+//diff_(q*v*q_star)/ diff_v
+matrix::Matrix3f diff_qvqstar_v(const matrix::Quatf &q);
+
 class Estimator
 {
 
 public:
 
 	// Constants for process noise and measurement noise variance
-	static constexpr float sigma_w = 0.0003394;// 1.5e-2;
+	static constexpr float sigma_w = 0.03394;// 1.5e-2;
 	// static const float sigma_wy = 1.5e-2;
 	// static const float sigma_wz = 1.5e-2;
-	static constexpr float sigma_bw = 3.8785e-05;// 1e-3;
+	static constexpr float sigma_bw = 3.8785e-03;// 1e-3;
 	// static const float sigma_bwy = 1e-3;
 	// static const float sigma_bwz = 1e-3;
-	static constexpr float sigma_a = 0.004; // 3.5e-1;
+	static constexpr float sigma_a = 0.3; // 3.5e-1;
 	// static const float sigma_ay = 3.5e-1;
 	// static const float sigma_az = 3.5e-1;
-	static constexpr float sigma_ba = 0.0006;// 3.0e-3;
+	static constexpr float sigma_ba = 0.06;// 3.0e-3;
 	// static const float sigma_bay = 3.0e-3;
 	// static const float sigma_baz = 3.0e-3;
 	static constexpr float sigma_mag = 1e-2;
+	static constexpr float sigma_gravity = 1e-1;
+
 	static constexpr float sigma_gps_x = 0.01;
 	static constexpr float sigma_gps_y = 0.01;
 	static constexpr float sigma_gps_z = 0.01;
-	static constexpr float sigma_gps_yaw = 5e-3;
+
+	static constexpr float sigma_gps_vx = 0.02;
+	static constexpr float sigma_gps_vy = 0.02;
+	static constexpr float sigma_gps_vz = 0.4;
 
 	static constexpr float corr_time_acc = 3.0e-3f;
 	static constexpr float corr_time_gyro = 1.0e-3f;
@@ -107,19 +135,35 @@ public:
 
 	static const uint64_t mag_update_time = 100; //ms
 
-	static const uint16_t max_init_sample = 1000;
+	static const uint16_t max_init_sample = 10;
 
 	Estimator();
+	~Estimator();
 
 	void update();
 
+	void setLastTimeMotorReceived(uint64_t *last_time);
 	void setGPSQueue(QueueHandle_t gpsQueueHandle);
 	void setIMUQueue(QueueHandle_t imuQueueHandle);
-	void setEstimatePosQueue(QueueHandle_t estimQueue);
-
-	~Estimator();
+	void setEstimateStateQueue(QueueHandle_t estimQueue);
+	void setSystemStatusQueue(QueueHandle_t ssQueue);
 
 private:
+
+	void collectInitSample (const ImuData &last_imu , float dt);
+	void initSystem(float currentTimeStamp);
+
+	void process(matrix::Vector<float , n_X> &xdot);
+	void predict(float dt);
+
+	void gpsCorrect(const GpsData *m_pos);
+	void project(double lat , double lon , float *x , float *y);
+
+	void yawCorrect(const matrix::Vector3f &mag_data);
+	void imuCorrect(const matrix::Vector3f &acc_data);
+
+	// Last time the device received motors values from PX4
+	uint64_t *last_time_motors_received;
 
 	// state space
 	matrix::Vector<float, n_X> _x; 				// State vector
@@ -129,23 +173,7 @@ private:
 
 	matrix::Matrix<float, n_X , n_X> _Fx;  		// Gradient matrix for state function
 	matrix::Matrix<float, n_X , n_U> _Fu;		// Gradient matrix for input function
-	matrix::Dcm<float> _Rbn;					// Direct cosinux matrix
-	matrix::Vector3f  _a_next; 					// Not include Rbn transformation
-	matrix::Vector3f a_next;					// Include true Rbn and gravity
-	matrix::Vector3f w_next;
-	matrix::Vector3f _w_dt;
-	matrix::Quatf _q_w_dt;
-
-	void predict(float dt);
-	matrix::Vector<float , n_X> model_dynamic(float dt );
-
-	void initSystem(float currentTimeStamp);
-
-	void gpsCorrect(const gps_data *m_pos);
-	void yawCorrect(const matrix::Vector3f &mag_data);
-	void imuCorrect(const matrix::Vector3f &acc_data);
-
-	void project(double lat , double lon , float *x , float *y);
+	matrix::Matrix<float, n_X , n_X> identity;
 
 	uint64_t _timeStamp;
 	uint16_t _sample_obtained;
@@ -157,6 +185,7 @@ private:
 	// Queue to receive gps and imu data
 	QueueHandle_t _gpsQueueHandle;
 	QueueHandle_t _imuQueueHandle;
+	QueueHandle_t _ssQueue;
 	QueueHandle_t _estimQueue;
 
 	// Initial mean of gravity , magnetometer and gyro bias estimate 
@@ -171,6 +200,8 @@ private:
 	float initgpsalt;
 	double cos_initgpslat;
 	double sin_initgpslat;
+
+	EstimateState last_estimate;
 };
 
 #endif //ESTIMATOR_H

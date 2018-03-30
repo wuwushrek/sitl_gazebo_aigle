@@ -1,22 +1,22 @@
 #include "aigle.h"
+#include "LowBatteryFault.h"
+#include "NoMotorCommandFault.h"
+#include "NoMotorLowBatteryCorrector.h"
+#include "RectangleArea.h"
+#include "OutOfZoneFault.h"
+#include "OutOfZoneCorrector.h"
 
-#define X_MIN -36
-#define Y_MIN -36
-#define X_MAX 36
-#define Y_MAX 36
+#define MIN_BATTERY_LEVEL 10
+#define MIN_DELAY_MOTOR 100
 
 int main(void ){
-	topology m_limit ={0};
-	m_limit.x_min = X_MIN;
-	m_limit.x_max = X_MAX;
-	m_limit.y_min = Y_MIN;
-	m_limit.y_max = Y_MAX;
 
 	// Create queue for message exchange between some tasks
-	QueueHandle_t gpsQueueHandle, imuQueueHandle, estQueueHandle;
-	gpsQueueHandle = xQueueCreate(1 , sizeof (gps_data));
-	imuQueueHandle = xQueueCreate(1 , sizeof (imu_data));
-	estQueueHandle = xQueueCreate(1 , sizeof (estimate_position));
+	QueueHandle_t gpsQueueHandle, imuQueueHandle, estQueueHandle,ssQueueHandle;
+	gpsQueueHandle = xQueueCreate(1 , sizeof (GpsData));
+	imuQueueHandle = xQueueCreate(1 , sizeof (ImuData));
+	estQueueHandle = xQueueCreate(1 , sizeof (EstimateState));
+	ssQueueHandle = xQueueCreate(1, sizeof (SystemStatus));
 
 	// Check if creattion was done
 	if (gpsQueueHandle == NULL){
@@ -28,38 +28,74 @@ int main(void ){
 		return 0;
 	}
 	if(estQueueHandle == NULL){
-		printf("[AIGLE] Could not create estimpos queue \n");
+		printf("[AIGLE] Could not create est state queue \n");
+		return 0;
+	}
+	if(ssQueueHandle == NULL){
+		printf("[AIGLE] Could not create system status queue \n");
 		return 0;
 	}
 
 	// Initialize aigle io interface with default port and queues elements
-	IoAigleInterface aigle_io;
-	aigle_io.setGPSQueue(gpsQueueHandle);
-	aigle_io.setIMUQueue(imuQueueHandle);
+	AigleIoInterface *aigle_io = NULL;
+	#ifdef AIGLE_SITL_MODE
+		AigleIoInterfaceSITL aigle_io_sitl;
+		aigle_io = &aigle_io_sitl;
+	#else
+		AigleIoInterfaceReal aigle_io_real;
+		aigle_io = &aigle_io_real;
+	#endif
+	aigle_io->setGPSQueue(gpsQueueHandle);
+	aigle_io->setIMUQueue(imuQueueHandle);
+	aigle_io->setSystemStatusQueue(ssQueueHandle);
 
 	// Initialize strategy class with aigle_io instance and queues elements
-	Strategy strategy(&aigle_io);
-	strategy.setTopology(m_limit);
-	strategy.setEstimatePosQueue(estQueueHandle);
+	StrategyManager strategy(aigle_io);
+	strategy.setEstimateStateQueue(estQueueHandle);
 
+	LowBatteryFault lowBattery(MIN_BATTERY_LEVEL);
+	NoMotorCommandFault noMotorCommand(MIN_DELAY_MOTOR);
+	RectangleArea soft_area(-10 , 10 , -10 , 10);
+	RectangleArea hard_area(-30 , 30 , -30 , 30);
+	OutOfZoneFault soft_fault =InsideSoftZoneFault((Area *) &soft_area);
+	OutOfZoneFault hard_fault = InsideHardZoneFault((Area *) &hard_area);
+	strategy.addFaultDetector((FaultDetector *) &lowBattery);
+	strategy.addFaultDetector((FaultDetector *) &noMotorCommand);
+	strategy.addFaultDetector((FaultDetector *) &soft_fault);
+	strategy.addFaultDetector((FaultDetector *) &hard_fault);
+
+	NoMotorLowBatteryCorrector LMCorrector(aigle_io);
+	InsideSoftZoneCorrector soft_corrector(aigle_io);
+	InsideHardZoneCorrector hard_corrector(aigle_io);
+	strategy.addFaultCorrector((FaultCorrector *) &LMCorrector);
+	strategy.addFaultCorrector((FaultCorrector *) &soft_corrector);
+	strategy.addFaultCorrector((FaultCorrector *) &hard_corrector);
+
+	if (strategy.isAllFaultCorrected()){
+		printf("All fault has at least one corrector ! \n");
+	} else {
+		printf("Some detected fault doesn't have a corrector ! \n");
+		return 0;
+	}
 	// Initialize estimator class 
 	Estimator estimator;
 	estimator.setGPSQueue(gpsQueueHandle);
 	estimator.setIMUQueue(imuQueueHandle);
-	estimator.setEstimatePosQueue(estQueueHandle);
+	estimator.setEstimateStateQueue(estQueueHandle);
+	estimator.setSystemStatusQueue(ssQueueHandle);
 
 	/* Tasks creation */
 	BaseType_t status;
 
 	/* Create periodic imu read task */
-	status = xTaskCreate(task_imu_read, "imu", STACK_IMU_SIZE, (void *) &aigle_io, SENSOR_READ_PRIORITY, NULL);
+	status = xTaskCreate(task_imu_read, "imu", STACK_IMU_SIZE, (void *) aigle_io, SENSOR_READ_PRIORITY, NULL);
 	if (status != pdPASS){
 		printf("[IMU] COULD_NOT_ALLOCATE_REQUIRED_MEMORY \n");
 		return 0;
 	}
 
 	/* Create periodic gps read task */
-	status = xTaskCreate(task_gps_read, "gps", STACK_GPS_SIZE, (void *) &aigle_io, SENSOR_READ_PRIORITY, NULL);
+	status = xTaskCreate(task_gps_read, "gps", STACK_GPS_SIZE, (void *) aigle_io, SENSOR_READ_PRIORITY, NULL);
 	if (status != pdPASS){
 		printf("[GPS] COULD_NOT_ALLOCATE_REQUIRED_MEMORY \n");
 		return 0;
@@ -81,7 +117,7 @@ int main(void ){
 
 	#ifdef AIGLE_SITL_MODE
 	/* Create periodic gps read task */
-	status = xTaskCreate(task_collectSensorsData, "sensor", STACK_IMU_SIZE, (void *) &aigle_io, SENSOR_READ_PRIORITY, NULL);
+	status = xTaskCreate(task_collectSensorsData, "sensor", STACK_IMU_SIZE, (void *) aigle_io, SENSOR_READ_PRIORITY, NULL);
 	if (status != pdPASS){
 		printf("[SENSOR] COULD_NOT_ALLOCATE_REQUIRED_MEMORY \n");
 		return 0;
@@ -95,7 +131,7 @@ int main(void ){
 }
 
 void task_imu_read(void*  aigle_instance){
-	IoAigleInterface *aigle_io = (IoAigleInterface *) aigle_instance;
+	AigleIoInterface *aigle_io = (AigleIoInterface *) aigle_instance;
 	TickType_t nextWakeTime;
 	const TickType_t periodToTick = pdMS_TO_TICKS(IMU_DEADLINE);
 	printf("%s\n", "[Aigle] IMU reading task started");
@@ -107,7 +143,7 @@ void task_imu_read(void*  aigle_instance){
 }
 
 void task_gps_read(void*  aigle_instance){
-	IoAigleInterface *aigle_io = (IoAigleInterface *) aigle_instance;
+	AigleIoInterface *aigle_io = (AigleIoInterface *) aigle_instance;
 	TickType_t nextWakeTime;
 	const TickType_t periodToTick = pdMS_TO_TICKS(GPS_DEADLINE);
 	printf("%s\n", "[Aigle] GPS reading task started");
@@ -119,14 +155,14 @@ void task_gps_read(void*  aigle_instance){
 }
 
 void task_strategy_control(void* strategy_instance){
-	Strategy *strategy = (Strategy *) strategy_instance;
+	StrategyManager *strategy = (StrategyManager *) strategy_instance;
 	TickType_t nextWakeTime;
 	const TickType_t periodToTick = pdMS_TO_TICKS(STRAT_DEADLINE);
 	printf("%s\n", "[STRAT] Stratedy task started");
 	nextWakeTime = xTaskGetTickCount();
 	while(1){
 		vTaskDelayUntil(&nextWakeTime, periodToTick);
-		strategy->execute_strategy();
+		strategy->detectAndApplyStrategy();
 	}
 }
 
@@ -140,7 +176,7 @@ void task_ekf_estimator(void* estim){
 
 #ifdef AIGLE_SITL_MODE
 void task_collectSensorsData(void* aigle_instance){
-	IoAigleInterface *aigle_io = (IoAigleInterface *) aigle_instance;
+	AigleIoInterface *aigle_io = (AigleIoInterface *) aigle_instance;
 	TickType_t nextWakeTime;
 	const TickType_t periodToTick = pdMS_TO_TICKS(SENSORS_DEADLINE);
 	printf("%s\n", "[Aigle] Sensors reading task started");

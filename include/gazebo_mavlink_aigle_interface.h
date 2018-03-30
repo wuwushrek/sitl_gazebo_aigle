@@ -26,6 +26,7 @@
 #include <Groundtruth.pb.h>
 
 #include <mavlink/v2.0/common/mavlink.h>
+// #include <mavlink/v2.0/common/mavlink_msg_battery_status.h>
 
 #include <geo_mag_declination.h>
 // #include <future>
@@ -100,7 +101,10 @@ private:
 	int aigle_port;
 	int _fd_aigle;
 	struct sockaddr_in srcaddr_;
-	// std::future<void> parrallel_recvfd_aigle;	
+	// std::future<void> parrallel_recvfd_aigle;
+	int battery_total_time;
+	int8_t current_battery;
+	common::Time init_time;
 };
 
 }
